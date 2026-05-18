@@ -1,0 +1,36 @@
+import { Router } from 'express';
+import { auth, internalAuth } from '../middlewares/auth.js';
+import {
+  saveToken,
+  removeToken,
+  getNotifications,
+  getUnreadCount,
+  markRead,
+  markAllRead,
+  handleAIResult,
+  handleSensorAlert,
+  subscribeToTopic,
+  unsubscribeFromTopic,
+} from '../controllers/notificationController.js';
+
+const router = Router();
+
+// Subscribe / unsubscribe topic (public — không cần auth)
+router.post('/subscribe',   subscribeToTopic);
+router.post('/unsubscribe', unsubscribeFromTopic);
+
+// Frontend gọi để đăng ký / xóa FCM token (cần auth)
+router.post('/token',       auth, saveToken);
+router.delete('/token',     auth, removeToken);
+
+// Lịch sử và trạng thái thông báo của user
+router.get('/',             auth, getNotifications);
+router.get('/unread-count', auth, getUnreadCount);
+router.patch('/:id/read',   auth, markRead);
+router.patch('/read-all',   auth, markAllRead);
+
+// Endpoint nội bộ — Lĩnh (AI) và Nhường (sensor) gọi vào
+router.post('/internal/ai-result',    internalAuth, handleAIResult);
+router.post('/internal/sensor-alert', internalAuth, handleSensorAlert);
+
+export default router;

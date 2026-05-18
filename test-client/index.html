@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Notification Service — Test Client</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #f5f5f5; color: #333; }
+    .container { max-width: 720px; margin: 32px auto; padding: 0 16px; }
+    h1 { font-size: 1.4rem; margin-bottom: 24px; }
+    .card { background: #fff; border-radius: 10px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.1); }
+    .card h2 { font-size: 1rem; margin-bottom: 12px; color: #555; }
+    label { display: block; font-size: .85rem; color: #666; margin-bottom: 4px; }
+    input, select, textarea {
+      width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 6px;
+      font-size: .9rem; margin-bottom: 10px;
+    }
+    textarea { resize: vertical; min-height: 80px; font-family: monospace; }
+    button {
+      padding: 9px 18px; background: #2d7ff9; color: #fff; border: none;
+      border-radius: 6px; cursor: pointer; font-size: .9rem; margin-right: 8px;
+    }
+    button:hover { background: #1a6ee0; }
+    button.danger { background: #e74c3c; }
+    button.danger:hover { background: #c0392b; }
+    .log { background: #1e1e1e; color: #d4d4d4; border-radius: 8px; padding: 14px;
+           font-family: monospace; font-size: .82rem; min-height: 120px;
+           max-height: 300px; overflow-y: auto; white-space: pre-wrap; }
+    .log .ok  { color: #4ec9b0; }
+    .log .err { color: #f48771; }
+    .log .info{ color: #9cdcfe; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px;
+             font-size: .75rem; font-weight: 600; margin-left: 8px; }
+    .badge.green { background: #d4edda; color: #155724; }
+    .badge.red   { background: #f8d7da; color: #721c24; }
+    #token-box { word-break: break-all; font-size: .78rem; color: #555;
+                 background: #f0f0f0; padding: 8px; border-radius: 6px; margin-top: 8px; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>🌿 Notification Service — Test Client</h1>
+
+  <!-- BƯỚC 1: Config -->
+  <div class="card">
+    <h2>1. Firebase Client Config</h2>
+    <p style="font-size:.82rem;color:#888;margin-bottom:10px">
+      Lấy từ Firebase Console → Project Settings → Your apps → Web app → SDK setup
+    </p>
+    <label>apiKey</label>
+    <input id="cfg-apiKey" value="AIzaSyCUaUnwE20Gi9V35CX9CkcDmqwwxFYZiNI" />
+    <label>projectId</label>
+    <input id="cfg-projectId" value="smartfarmai-f1426" />
+    <label>messagingSenderId</label>
+    <input id="cfg-senderId" value="1071313553757" />
+    <label>appId</label>
+    <input id="cfg-appId" value="1:1071313553757:web:d9ad58188bcde720ca80b4" />
+    <label>VAPID Key (Web Push certificate)</label>
+    <input id="cfg-vapid" value="BNOC91dgjosxTi-sHV8HaeTx3jKUAUwVAvyWY4tMc_zbMuoMmad0r1h3Rodl92k2bM_E6y4OmHiLP9jSsJ26G6Q" />
+    <label>Notification Service URL</label>
+    <input id="cfg-serverUrl" value="http://localhost:3001" />
+    <label>Internal API Key (INTERNAL_API_KEY trong .env)</label>
+    <input id="cfg-internalKey" value="c90620ca0391d338fa3d8b9ded891fde" />
+    <button onclick="initFirebase()">Khởi tạo Firebase</button>
+    <span id="firebase-status" class="badge red">Chưa khởi tạo</span>
+  </div>
+
+  <!-- BƯỚC 2: Token -->
+  <div class="card">
+    <h2>2. Lấy FCM Token & Đăng ký nhận thông báo</h2>
+    <button onclick="requestToken()">Xin quyền & Lấy Token</button>
+    <button onclick="subscribeToTopic()">Subscribe topic <i>iot_alerts_topic</i></button>
+    <div id="token-box">Token sẽ hiện ở đây...</div>
+  </div>
+
+  <!-- BƯỚC 3: Gửi test từ server -->
+  <div class="card">
+    <h2>3. Gửi thông báo qua Internal API</h2>
+    <label>Event Type</label>
+    <select id="event-type">
+      <option>LOW_SOIL_MOISTURE</option>
+      <option>HIGH_SOIL_MOISTURE</option>
+      <option>LOW_LIGHT</option>
+      <option>HIGH_LIGHT</option>
+      <option>LOW_HUMIDITY</option>
+      <option>HIGH_HUMIDITY</option>
+      <option>LOW_TEMPERATURE</option>
+      <option>HIGH_TEMPERATURE</option>
+      <option>LIGHT_TURNED_ON</option>
+      <option>UV_LIGHT_ON</option>
+    </select>
+    <label>Data (JSON)</label>
+    <textarea id="event-data">{"location": "vườn A", "moisture": 28, "userId": "user_test_01"}</textarea>
+    <button onclick="sendIoTEvent()">Gửi IoT Event (sensor alert)</button>
+    <button onclick="sendAIResult()">Gửi AI Result</button>
+  </div>
+
+  <!-- BƯỚC 4: Log -->
+  <div class="card">
+    <h2>4. Log</h2>
+    <button class="danger" onclick="clearLog()">Xóa log</button>
+    <div class="log" id="log">Chờ hoạt động...\n</div>
+  </div>
+</div>
+
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
+
+<script>
+let messaging = null;
+let fcmToken   = null;
+
+function log(msg, type = 'info') {
+  const el = document.getElementById('log');
+  const ts = new Date().toLocaleTimeString();
+  el.innerHTML += `<span class="${type}">[${ts}] ${msg}</span>\n`;
+  el.scrollTop = el.scrollHeight;
+}
+function clearLog() { document.getElementById('log').innerHTML = ''; }
+
+function getServerUrl() { return document.getElementById('cfg-serverUrl').value.replace(/\/$/, ''); }
+function getInternalKey() { return document.getElementById('cfg-internalKey').value; }
+
+function initFirebase() {
+  const config = {
+    apiKey:            document.getElementById('cfg-apiKey').value,
+    projectId:         document.getElementById('cfg-projectId').value,
+    messagingSenderId: document.getElementById('cfg-senderId').value,
+    appId:             document.getElementById('cfg-appId').value,
+  };
+
+  if (!config.apiKey || !config.projectId) {
+    log('❌ Thiếu apiKey hoặc projectId', 'err'); return;
+  }
+
+  try {
+    if (!firebase.apps.length) firebase.initializeApp(config);
+
+    messaging = firebase.messaging();
+
+    // Nhận thông báo khi tab đang mở (foreground)
+    messaging.onMessage((payload) => {
+      const d = payload.data || {};
+      log(`📬 Foreground message: ${d.title} — ${d.body}`, 'ok');
+    });
+
+    document.getElementById('firebase-status').textContent = 'Đã khởi tạo';
+    document.getElementById('firebase-status').className = 'badge green';
+    log('✅ Firebase khởi tạo thành công', 'ok');
+  } catch (e) {
+    log('❌ ' + e.message, 'err');
+  }
+}
+
+async function requestToken() {
+  if (!messaging) { log('❌ Khởi tạo Firebase trước', 'err'); return; }
+  try {
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') { log('❌ Người dùng từ chối quyền thông báo', 'err'); return; }
+
+    const vapid = document.getElementById('cfg-vapid').value;
+    const swReg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+
+    fcmToken = await messaging.getToken({ vapidKey: vapid, serviceWorkerRegistration: swReg });
+    document.getElementById('token-box').textContent = fcmToken;
+    log('✅ Lấy token thành công', 'ok');
+    log('Token: ' + fcmToken.substring(0, 40) + '...', 'info');
+  } catch (e) {
+    log('❌ ' + e.message, 'err');
+  }
+}
+
+async function subscribeToTopic() {
+  if (!fcmToken) { log('❌ Lấy token trước', 'err'); return; }
+  try {
+    const res = await fetch(`${getServerUrl()}/api/v1/notifications/subscribe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: fcmToken, topic: 'iot_alerts_topic' })
+    });
+    const json = await res.json();
+    log(res.ok ? '✅ Subscribe thành công' : '❌ ' + json.message, res.ok ? 'ok' : 'err');
+  } catch (e) {
+    log('❌ ' + e.message, 'err');
+  }
+}
+
+async function sendIoTEvent() {
+  const eventType = document.getElementById('event-type').value;
+  let data;
+  try { data = JSON.parse(document.getElementById('event-data').value); }
+  catch { log('❌ Data JSON không hợp lệ', 'err'); return; }
+
+  log(`📤 Gửi sensor alert: ${eventType}`, 'info');
+  try {
+    const res = await fetch(`${getServerUrl()}/api/v1/notifications/internal/sensor-alert`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-internal-key': getInternalKey(),
+      },
+      body: JSON.stringify({
+        userId:    data.userId || 'user_test_01',
+        eventType: eventType,
+        location:  data.location || 'vườn A',
+        ...data
+      })
+    });
+    const json = await res.json();
+    log(res.ok ? '✅ ' + json.message : '❌ ' + json.message, res.ok ? 'ok' : 'err');
+  } catch (e) {
+    log('❌ ' + e.message, 'err');
+  }
+}
+
+async function sendAIResult() {
+  let data;
+  try { data = JSON.parse(document.getElementById('event-data').value); }
+  catch { log('❌ Data JSON không hợp lệ', 'err'); return; }
+
+  const payload = {
+    userId: data.userId || 'user_test_01',
+    water: { status: 'low', value: data.moisture ?? 28, threshold: 40 },
+    light: { status: 'insufficient', value: data.lux ?? 200 },
+  };
+
+  log('📤 Gửi AI result...', 'info');
+  try {
+    const res = await fetch(`${getServerUrl()}/api/v1/notifications/internal/ai-result`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-internal-key': getInternalKey(),
+      },
+      body: JSON.stringify(payload)
+    });
+    const json = await res.json();
+    log(res.ok ? '✅ ' + json.message : '❌ ' + json.message, res.ok ? 'ok' : 'err');
+  } catch (e) {
+    log('❌ ' + e.message, 'err');
+  }
+}
+</script>
+</body>
+</html>
