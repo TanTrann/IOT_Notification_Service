@@ -1,6 +1,6 @@
-import notificationService from '../services/notificationService.js';
-import fcmService from '../services/fcmService.js';
 import FCMToken from '../models/FCMToken.js';
+import fcmService from '../services/fcmService.js';
+import notificationService from '../services/notificationService.js';
 
 export async function saveToken(req, res) {
   try {

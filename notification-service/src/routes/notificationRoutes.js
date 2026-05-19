@@ -1,17 +1,21 @@
 import { Router } from 'express';
-import { auth, internalAuth } from '../middlewares/auth.js';
+
 import {
-  saveToken,
-  removeToken,
   getNotifications,
   getUnreadCount,
-  markRead,
-  markAllRead,
   handleAIResult,
   handleSensorAlert,
+  markAllRead,
+  markRead,
+  removeToken,
+  saveToken,
   subscribeToTopic,
   unsubscribeFromTopic,
 } from '../controllers/notificationController.js';
+import {
+  auth,
+  internalAuth,
+} from '../middlewares/auth.js';
 
 const router = Router();
 
