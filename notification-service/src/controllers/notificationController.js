@@ -68,10 +68,25 @@ export async function markAllRead(req, res) {
   }
 }
 
-export async function handleAIResult(req, res) {
+// Phong's MCP server gọi vào để đẩy 1 notification đã format sẵn
+export async function handleNotify(req, res) {
   try {
-    await notificationService.handleAIResult(req.body);
-    res.status(200).json({ success: true, message: 'AI result processed' });
+    const { userId, type, severity, title, body, data } = req.body;
+    if (!userId || !title || !body) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields: userId, title, body'
+      });
+    }
+    const saved = await notificationService.notify({
+      userId,
+      type:     type     || 'system',
+      severity: severity || 'info',
+      title,
+      body,
+      data:     data || {},
+    });
+    res.status(200).json({ success: true, message: 'Notification sent', id: saved?._id });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -94,15 +109,6 @@ export async function unsubscribeFromTopic(req, res) {
     if (!token) return res.status(400).json({ success: false, message: 'Missing token' });
     const result = await fcmService.unsubscribeFromTopic(token, topic);
     res.status(200).json({ success: true, message: `Đã unsubscribe khỏi topic ${topic}`, details: result });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-}
-
-export async function handleSensorAlert(req, res) {
-  try {
-    await notificationService.handleSensorAlert(req.body);
-    res.status(200).json({ success: true, message: 'Sensor alert processed' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

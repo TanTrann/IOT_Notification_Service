@@ -74,26 +74,19 @@
     <div id="token-box">Token sẽ hiện ở đây...</div>
   </div>
 
-  <!-- BƯỚC 3: Gửi test từ server -->
+  <!-- BƯỚC 3: Gửi test từ server (giả lập Phong's MCP gọi vào) -->
   <div class="card">
-    <h2>3. Gửi thông báo qua Internal API</h2>
-    <label>Event Type</label>
-    <select id="event-type">
-      <option>LOW_SOIL_MOISTURE</option>
-      <option>HIGH_SOIL_MOISTURE</option>
-      <option>LOW_LIGHT</option>
-      <option>HIGH_LIGHT</option>
-      <option>LOW_HUMIDITY</option>
-      <option>HIGH_HUMIDITY</option>
-      <option>LOW_TEMPERATURE</option>
-      <option>HIGH_TEMPERATURE</option>
-      <option>LIGHT_TURNED_ON</option>
-      <option>UV_LIGHT_ON</option>
-    </select>
-    <label>Data (JSON)</label>
-    <textarea id="event-data">{"location": "vườn A", "moisture": 28, "userId": "user_test_01"}</textarea>
-    <button onclick="sendIoTEvent()">Gửi IoT Event (sensor alert)</button>
-    <button onclick="sendAIResult()">Gửi AI Result</button>
+    <h2>3. Gửi thông báo qua Internal API <small style="color:#888;font-weight:normal">(giả lập Phong's MCP)</small></h2>
+    <label>Notification Payload (JSON)</label>
+    <textarea id="notify-payload" style="min-height:180px">{
+  "userId":   "user_test_01",
+  "type":     "water",
+  "severity": "warning",
+  "title":    "🟤 Đất khô — Cần tưới nước",
+  "body":     "Độ ẩm đất tại vườn A: 28% (ngưỡng tối thiểu: 40%). Cây cần được tưới ngay.",
+  "data":     { "location": "vườn A", "moisture": 28 }
+}</textarea>
+    <button onclick="sendNotify()">Gửi Notification</button>
   </div>
 
   <!-- BƯỚC 4: Log -->
@@ -142,8 +135,11 @@ function initFirebase() {
 
     // Nhận thông báo khi tab đang mở (foreground)
     messaging.onMessage((payload) => {
+      const n = payload.notification || {};
       const d = payload.data || {};
-      log(`📬 Foreground message: ${d.title} — ${d.body}`, 'ok');
+      const title = n.title || d.title || '(no title)';
+      const body  = n.body  || d.body  || '(no body)';
+      log(`📬 Foreground message: ${title} — ${body}`, 'ok');
     });
 
     document.getElementById('firebase-status').textContent = 'Đã khởi tạo';
@@ -187,48 +183,14 @@ async function subscribeToTopic() {
   }
 }
 
-async function sendIoTEvent() {
-  const eventType = document.getElementById('event-type').value;
-  let data;
-  try { data = JSON.parse(document.getElementById('event-data').value); }
-  catch { log('❌ Data JSON không hợp lệ', 'err'); return; }
+async function sendNotify() {
+  let payload;
+  try { payload = JSON.parse(document.getElementById('notify-payload').value); }
+  catch { log('❌ Payload JSON không hợp lệ', 'err'); return; }
 
-  log(`📤 Gửi sensor alert: ${eventType}`, 'info');
+  log(`📤 Gửi notification: ${payload.title}`, 'info');
   try {
-    const res = await fetch(`${getServerUrl()}/api/v1/notifications/internal/sensor-alert`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-internal-key': getInternalKey(),
-      },
-      body: JSON.stringify({
-        userId:    data.userId || 'user_test_01',
-        eventType: eventType,
-        location:  data.location || 'vườn A',
-        ...data
-      })
-    });
-    const json = await res.json();
-    log(res.ok ? '✅ ' + json.message : '❌ ' + json.message, res.ok ? 'ok' : 'err');
-  } catch (e) {
-    log('❌ ' + e.message, 'err');
-  }
-}
-
-async function sendAIResult() {
-  let data;
-  try { data = JSON.parse(document.getElementById('event-data').value); }
-  catch { log('❌ Data JSON không hợp lệ', 'err'); return; }
-
-  const payload = {
-    userId: data.userId || 'user_test_01',
-    water: { status: 'low', value: data.moisture ?? 28, threshold: 40 },
-    light: { status: 'insufficient', value: data.lux ?? 200 },
-  };
-
-  log('📤 Gửi AI result...', 'info');
-  try {
-    const res = await fetch(`${getServerUrl()}/api/v1/notifications/internal/ai-result`, {
+    const res = await fetch(`${getServerUrl()}/api/v1/notifications/internal/notify`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

@@ -3,8 +3,7 @@ import { Router } from 'express';
 import {
   getNotifications,
   getUnreadCount,
-  handleAIResult,
-  handleSensorAlert,
+  handleNotify,
   markAllRead,
   markRead,
   removeToken,
@@ -33,8 +32,7 @@ router.get('/unread-count', auth, getUnreadCount);
 router.patch('/:id/read',   auth, markRead);
 router.patch('/read-all',   auth, markAllRead);
 
-// Endpoint nội bộ — Lĩnh (AI) và Nhường (sensor) gọi vào
-router.post('/internal/ai-result',    internalAuth, handleAIResult);
-router.post('/internal/sensor-alert', internalAuth, handleSensorAlert);
+// Endpoint nội bộ — Phong's MCP server gọi vào để đẩy notification
+router.post('/internal/notify', internalAuth, handleNotify);
 
 export default router;
