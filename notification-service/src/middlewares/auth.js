@@ -16,10 +16,3 @@ export function auth(req, res, next) {
   }
 }
 
-export function internalAuth(req, res, next) {
-  const key = req.headers['x-internal-key'];
-  if (!key || key !== process.env.INTERNAL_API_KEY) {
-    return res.status(401).json({ success: false, message: 'Unauthorized: invalid internal API key' });
-  }
-  next();
-}

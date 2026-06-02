@@ -12,42 +12,78 @@
     .card { background: #fff; border-radius: 10px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.1); }
     .card h2 { font-size: 1rem; margin-bottom: 12px; color: #555; }
     label { display: block; font-size: .85rem; color: #666; margin-bottom: 4px; }
-    input, select, textarea {
+    input, textarea {
       width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 6px;
       font-size: .9rem; margin-bottom: 10px;
     }
     textarea { resize: vertical; min-height: 80px; font-family: monospace; }
     button {
       padding: 9px 18px; background: #2d7ff9; color: #fff; border: none;
-      border-radius: 6px; cursor: pointer; font-size: .9rem; margin-right: 8px;
+      border-radius: 6px; cursor: pointer; font-size: .9rem; margin-right: 8px; margin-bottom: 6px;
     }
     button:hover { background: #1a6ee0; }
     button.danger { background: #e74c3c; }
     button.danger:hover { background: #c0392b; }
+    button.secondary { background: #6c757d; }
+    button.secondary:hover { background: #545b62; }
     .log { background: #1e1e1e; color: #d4d4d4; border-radius: 8px; padding: 14px;
            font-family: monospace; font-size: .82rem; min-height: 120px;
            max-height: 300px; overflow-y: auto; white-space: pre-wrap; }
-    .log .ok  { color: #4ec9b0; }
-    .log .err { color: #f48771; }
-    .log .info{ color: #9cdcfe; }
+    .log .ok   { color: #4ec9b0; }
+    .log .err  { color: #f48771; }
+    .log .info { color: #9cdcfe; }
     .badge { display: inline-block; padding: 2px 8px; border-radius: 4px;
              font-size: .75rem; font-weight: 600; margin-left: 8px; }
     .badge.green { background: #d4edda; color: #155724; }
     .badge.red   { background: #f8d7da; color: #721c24; }
     #token-box { word-break: break-all; font-size: .78rem; color: #555;
                  background: #f0f0f0; padding: 8px; border-radius: 6px; margin-top: 8px; }
+    .hint { font-size: .8rem; color: #888; margin-bottom: 10px; background: #fffbe6;
+            border-left: 3px solid #f0ad4e; padding: 8px 10px; border-radius: 4px; }
+    .step-num { display: inline-block; background: #2d7ff9; color: #fff;
+                border-radius: 50%; width: 20px; height: 20px; text-align: center;
+                line-height: 20px; font-size: .75rem; margin-right: 6px; }
   </style>
 </head>
 <body>
 <div class="container">
   <h1>🌿 Notification Service — Test Client</h1>
 
-  <!-- BƯỚC 1: Config -->
+  <!-- BƯỚC 1: Config chung -->
   <div class="card">
-    <h2>1. Firebase Client Config</h2>
-    <p style="font-size:.82rem;color:#888;margin-bottom:10px">
-      Lấy từ Firebase Console → Project Settings → Your apps → Web app → SDK setup
-    </p>
+    <h2><span class="step-num">1</span>Cấu hình chung</h2>
+    <label>Notification Service URL</label>
+    <input id="cfg-serverUrl" value="http://localhost:3001" />
+    <label>MQTT WebSocket URL</label>
+    <input id="cfg-mqtt" value="ws://localhost:1883" />
+    <label>MQTT Topic</label>
+    <input id="cfg-topic" value="iot/notifications" />
+  </div>
+
+  <!-- BƯỚC 2: JWT -->
+  <div class="card">
+    <h2><span class="step-num">2</span>JWT Token</h2>
+    <div class="hint">
+      Chạy lệnh sau để sinh JWT:<br>
+      <code>cd notification-service && node generate-token.js user_test_01</code><br>
+      Paste kết quả vào ô bên dưới.
+    </div>
+    <label>JWT Token</label>
+    <input id="cfg-jwt" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." />
+    <label>User ID (phải khớp với userId trong JWT)</label>
+    <input id="cfg-userId" value="user_test_01" />
+  </div>
+
+  <!-- BƯỚC 3: MQTT -->
+  <div class="card">
+    <h2><span class="step-num">3</span>Kết nối MQTT</h2>
+    <button onclick="connectMQTT()">Kết nối</button>
+    <span id="mqtt-status" class="badge red">Chưa kết nối</span>
+  </div>
+
+  <!-- BƯỚC 4: Firebase + FCM Token -->
+  <div class="card">
+    <h2><span class="step-num">4</span>Firebase — Lấy FCM Token</h2>
     <label>apiKey</label>
     <input id="cfg-apiKey" value="AIzaSyCUaUnwE20Gi9V35CX9CkcDmqwwxFYZiNI" />
     <label>projectId</label>
@@ -56,54 +92,47 @@
     <input id="cfg-senderId" value="1071313553757" />
     <label>appId</label>
     <input id="cfg-appId" value="1:1071313553757:web:d9ad58188bcde720ca80b4" />
-    <label>VAPID Key (Web Push certificate)</label>
+    <label>VAPID Key</label>
     <input id="cfg-vapid" value="BNOC91dgjosxTi-sHV8HaeTx3jKUAUwVAvyWY4tMc_zbMuoMmad0r1h3Rodl92k2bM_E6y4OmHiLP9jSsJ26G6Q" />
-    <label>Notification Service URL</label>
-    <input id="cfg-serverUrl" value="http://localhost:3001" />
-    <label>Internal API Key (INTERNAL_API_KEY trong .env)</label>
-    <input id="cfg-internalKey" value="c90620ca0391d338fa3d8b9ded891fde" />
     <button onclick="initFirebase()">Khởi tạo Firebase</button>
     <span id="firebase-status" class="badge red">Chưa khởi tạo</span>
-  </div>
-
-  <!-- BƯỚC 2: Token -->
-  <div class="card">
-    <h2>2. Lấy FCM Token & Đăng ký nhận thông báo</h2>
-    <button onclick="requestToken()">Xin quyền & Lấy Token</button>
-    <button onclick="subscribeToTopic()">Subscribe topic <i>iot_alerts_topic</i></button>
+    <br><br>
+    <button onclick="requestAndSaveToken()" class="secondary">Xin quyền → Lấy Token → Lưu vào DB</button>
     <div id="token-box">Token sẽ hiện ở đây...</div>
   </div>
 
-  <!-- BƯỚC 3: Gửi test từ server (giả lập Phong's MCP gọi vào) -->
+  <!-- BƯỚC 5: Publish MQTT -->
   <div class="card">
-    <h2>3. Gửi thông báo qua Internal API <small style="color:#888;font-weight:normal">(giả lập Phong's MCP)</small></h2>
-    <label>Notification Payload (JSON)</label>
-    <textarea id="notify-payload" style="min-height:180px">{
+    <h2><span class="step-num">5</span>Publish MQTT <small style="color:#888;font-weight:normal">(giả lập Phong's MCP)</small></h2>
+    <div class="hint">userId phải khớp với bước 2 để service tìm đúng FCM token.</div>
+    <label>Payload (JSON)</label>
+    <textarea id="notify-payload" style="min-height:160px">{
   "userId":   "user_test_01",
   "type":     "water",
   "severity": "warning",
-  "title":    "🟤 Đất khô — Cần tưới nước",
-  "body":     "Độ ẩm đất tại vườn A: 28% (ngưỡng tối thiểu: 40%). Cây cần được tưới ngay.",
+  "title":    "Đất khô — Cần tưới nước",
+  "body":     "Độ ẩm đất tại vườn A: 28%. Cây cần được tưới ngay.",
   "data":     { "location": "vườn A", "moisture": 28 }
 }</textarea>
-    <button onclick="sendNotify()">Gửi Notification</button>
+    <button onclick="publishNotify()">🚀 Publish</button>
   </div>
 
-  <!-- BƯỚC 4: Log -->
+  <!-- Log -->
   <div class="card">
-    <h2>4. Log</h2>
+    <h2>Log</h2>
     <button class="danger" onclick="clearLog()">Xóa log</button>
     <div class="log" id="log">Chờ hoạt động...\n</div>
   </div>
 </div>
 
-<!-- Firebase SDK -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
 
 <script>
-let messaging = null;
+let messaging  = null;
 let fcmToken   = null;
+let mqttClient = null;
 
 function log(msg, type = 'info') {
   const el = document.getElementById('log');
@@ -112,10 +141,39 @@ function log(msg, type = 'info') {
   el.scrollTop = el.scrollHeight;
 }
 function clearLog() { document.getElementById('log').innerHTML = ''; }
-
 function getServerUrl() { return document.getElementById('cfg-serverUrl').value.replace(/\/$/, ''); }
-function getInternalKey() { return document.getElementById('cfg-internalKey').value; }
+function getJwt()       { return document.getElementById('cfg-jwt').value.trim(); }
 
+// ── MQTT ──────────────────────────────────────────────
+function connectMQTT() {
+  const url = document.getElementById('cfg-mqtt').value;
+  if (mqttClient) mqttClient.end(true);
+  mqttClient = mqtt.connect(url);
+  mqttClient.on('connect', () => {
+    document.getElementById('mqtt-status').textContent = 'Đã kết nối';
+    document.getElementById('mqtt-status').className = 'badge green';
+    log(`✅ MQTT kết nối tới ${url}`, 'ok');
+  });
+  mqttClient.on('error', err => log('❌ MQTT: ' + err.message, 'err'));
+  mqttClient.on('close', () => {
+    document.getElementById('mqtt-status').textContent = 'Mất kết nối';
+    document.getElementById('mqtt-status').className = 'badge red';
+  });
+}
+
+function publishNotify() {
+  if (!mqttClient?.connected) { log('❌ Kết nối MQTT trước (bước 3)', 'err'); return; }
+  let payload;
+  try { payload = JSON.parse(document.getElementById('notify-payload').value); }
+  catch { log('❌ Payload JSON không hợp lệ', 'err'); return; }
+  const topic = document.getElementById('cfg-topic').value;
+  mqttClient.publish(topic, JSON.stringify(payload), { qos: 1 }, err => {
+    if (err) log('❌ Publish thất bại: ' + err.message, 'err');
+    else     log(`✅ Đã publish lên [${topic}]: "${payload.title}"`, 'ok');
+  });
+}
+
+// ── Firebase ──────────────────────────────────────────
 function initFirebase() {
   const config = {
     apiKey:            document.getElementById('cfg-apiKey').value,
@@ -123,83 +181,51 @@ function initFirebase() {
     messagingSenderId: document.getElementById('cfg-senderId').value,
     appId:             document.getElementById('cfg-appId').value,
   };
-
-  if (!config.apiKey || !config.projectId) {
-    log('❌ Thiếu apiKey hoặc projectId', 'err'); return;
-  }
-
   try {
     if (!firebase.apps.length) firebase.initializeApp(config);
-
     messaging = firebase.messaging();
-
-    // Nhận thông báo khi tab đang mở (foreground)
-    messaging.onMessage((payload) => {
-      const n = payload.notification || {};
-      const d = payload.data || {};
-      const title = n.title || d.title || '(no title)';
-      const body  = n.body  || d.body  || '(no body)';
-      log(`📬 Foreground message: ${title} — ${body}`, 'ok');
+    messaging.onMessage(payload => {
+      const n = payload.notification || payload.data || {};
+      log(`📬 Foreground notification: "${n.title}" — ${n.body}`, 'ok');
     });
-
     document.getElementById('firebase-status').textContent = 'Đã khởi tạo';
     document.getElementById('firebase-status').className = 'badge green';
     log('✅ Firebase khởi tạo thành công', 'ok');
   } catch (e) {
-    log('❌ ' + e.message, 'err');
+    log('❌ Firebase: ' + e.message, 'err');
   }
 }
 
-async function requestToken() {
-  if (!messaging) { log('❌ Khởi tạo Firebase trước', 'err'); return; }
+async function requestAndSaveToken() {
+  if (!messaging) { log('❌ Khởi tạo Firebase trước (bước 4)', 'err'); return; }
+  const jwtToken = getJwt();
+  if (!jwtToken) { log('❌ Nhập JWT token trước (bước 2)', 'err'); return; }
+
   try {
+    // 1. Xin quyền thông báo
     const permission = await Notification.requestPermission();
     if (permission !== 'granted') { log('❌ Người dùng từ chối quyền thông báo', 'err'); return; }
+    log('✅ Quyền thông báo được cấp', 'ok');
 
+    // 2. Lấy FCM token
     const vapid = document.getElementById('cfg-vapid').value;
     const swReg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
-
     fcmToken = await messaging.getToken({ vapidKey: vapid, serviceWorkerRegistration: swReg });
     document.getElementById('token-box').textContent = fcmToken;
-    log('✅ Lấy token thành công', 'ok');
-    log('Token: ' + fcmToken.substring(0, 40) + '...', 'info');
-  } catch (e) {
-    log('❌ ' + e.message, 'err');
-  }
-}
+    log('✅ Lấy FCM token thành công: ' + fcmToken.substring(0, 40) + '...', 'ok');
 
-async function subscribeToTopic() {
-  if (!fcmToken) { log('❌ Lấy token trước', 'err'); return; }
-  try {
-    const res = await fetch(`${getServerUrl()}/api/v1/notifications/subscribe`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: fcmToken, topic: 'iot_alerts_topic' })
-    });
-    const json = await res.json();
-    log(res.ok ? '✅ Subscribe thành công' : '❌ ' + json.message, res.ok ? 'ok' : 'err');
-  } catch (e) {
-    log('❌ ' + e.message, 'err');
-  }
-}
-
-async function sendNotify() {
-  let payload;
-  try { payload = JSON.parse(document.getElementById('notify-payload').value); }
-  catch { log('❌ Payload JSON không hợp lệ', 'err'); return; }
-
-  log(`📤 Gửi notification: ${payload.title}`, 'info');
-  try {
-    const res = await fetch(`${getServerUrl()}/api/v1/notifications/internal/notify`, {
+    // 3. Lưu token vào service (DB)
+    const res = await fetch(`${getServerUrl()}/api/v1/notifications/token`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-internal-key': getInternalKey(),
+        'Authorization': `Bearer ${jwtToken}`,
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify({ token: fcmToken, device: 'web' }),
     });
     const json = await res.json();
-    log(res.ok ? '✅ ' + json.message : '❌ ' + json.message, res.ok ? 'ok' : 'err');
+    if (res.ok) log('✅ Token đã lưu vào DB — sẵn sàng nhận thông báo!', 'ok');
+    else        log('❌ Lưu token thất bại: ' + json.message, 'err');
   } catch (e) {
     log('❌ ' + e.message, 'err');
   }

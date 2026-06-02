@@ -1,33 +1,18 @@
-import mongoose from 'mongoose';
-import fcmService from './fcmService.js';
 import Notification from '../models/Notification.js';
-
-const dbReady = () => mongoose.connection.readyState === 1;
+import fcmService from './fcmService.js';
 
 class NotificationService {
-
-  // Endpoint duy nhất Phong's MCP gọi — payload đã được format sẵn
   async notify({ userId, type, severity, title, body, data }) {
-    let saved = null;
-    if (dbReady()) {
-      saved = await Notification.create({ userId, type, severity, title, body, data });
-    }
-
-    const fcmData = {
+    const saved = await Notification.create({ userId, type, severity, title, body, data });
+    await fcmService.sendToUser(userId, {
       title,
       body,
       data: {
-        notificationId: saved?._id?.toString() ?? '',
+        notificationId: saved._id.toString(),
         type:           type     ?? '',
-        severity:       severity ?? ''
-      }
-    };
-
-    if (dbReady()) {
-      await fcmService.sendToUser(userId, fcmData);
-    } else {
-      await fcmService.sendToTopic('iot_alerts_topic', fcmData);
-    }
+        severity:       severity ?? '',
+      },
+    });
     return saved;
   }
 
@@ -37,7 +22,7 @@ class NotificationService {
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit),
-      Notification.countDocuments({ userId, isRead: false })
+      Notification.countDocuments({ userId, isRead: false }),
     ]);
     return { items, unreadCount };
   }

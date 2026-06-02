@@ -1,5 +1,6 @@
 import 'dotenv/config';
-import './config/firebase.js'; // khởi tạo Firebase Admin sớm
+import './config/firebase.js';
+import { startMQTTListener } from './services/mqttHandler.js';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -9,6 +10,7 @@ import mongoose from 'mongoose';
 import notificationRoutes from './routes/notificationRoutes.js';
 
 const app = express();
+const isProd = process.env.NODE_ENV === 'production';
 
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
   .split(',')
@@ -21,24 +23,21 @@ app.use(cors({
     if (!origin) return cb(null, true);
     if (allowedOrigins.includes('*') || allowedOrigins.includes(origin)) return cb(null, true);
     return cb(new Error(`Origin ${origin} not allowed by CORS`));
-  }
+  },
 }));
 app.use(compression());
 app.use(express.json());
-app.use(morgan('dev'));
+app.use(morgan(isProd ? 'combined' : 'dev'));
 
 app.use('/api/v1/notifications', notificationRoutes);
 
-app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok', message: 'Notification Service is running' });
-});
+app.get('/health', (_req, res) => res.json({ status: 'ok', message: 'Notification Service is running' }));
 
-app.use((err, req, res, next) => {
+app.use((err, _req, res, _next) => {
   console.error(err.stack);
-  res.status(500).json({
+  res.status(err.status ?? 500).json({
     success: false,
-    message: 'Internal Server Error',
-    error: process.env.NODE_ENV === 'development' ? err.message : undefined
+    message: isProd ? 'Internal Server Error' : err.message,
   });
 });
 
@@ -52,6 +51,7 @@ async function start() {
   } else {
     console.warn('WARNING: MONGODB_URI not set — DB-dependent routes will not work');
   }
+  startMQTTListener();
   app.listen(PORT, () => console.log(`Notification Service running on port ${PORT}`));
 }
 
