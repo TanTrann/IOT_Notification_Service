@@ -6,8 +6,8 @@ import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import morgan from 'morgan';
-import mongoose from 'mongoose';
 import notificationRoutes from './routes/notificationRoutes.js';
+import { connectDB } from './config/database.js';
 
 const app = express();
 const isProd = process.env.NODE_ENV === 'production';
@@ -42,15 +42,9 @@ app.use((err, _req, res, _next) => {
 });
 
 const PORT = process.env.PORT || 3001;
-const MONGODB_URI = process.env.MONGODB_URI;
 
 async function start() {
-  if (MONGODB_URI) {
-    await mongoose.connect(MONGODB_URI);
-    console.log('MongoDB connected');
-  } else {
-    console.warn('WARNING: MONGODB_URI not set — DB-dependent routes will not work');
-  }
+  await connectDB();
   startMQTTListener();
   app.listen(PORT, () => console.log(`Notification Service running on port ${PORT}`));
 }
