@@ -9,7 +9,7 @@ export function auth(req, res, next) {
   const token = authHeader.slice(7);
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.userId = decoded.userId || decoded.sub || decoded.id;
+    req.deviceId = decoded.deviceId || decoded.sub || decoded.id;
     next();
   } catch {
     res.status(401).json({ success: false, message: 'Invalid or expired token' });

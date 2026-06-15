@@ -2,9 +2,9 @@ import Notification from '../models/Notification.js';
 import fcmService from './fcmService.js';
 
 class NotificationService {
-  async notify({ userId, type, severity, title, body, data }) {
-    const saved = await Notification.create({ userId, type, severity, title, body, data });
-    await fcmService.sendToUser(userId, {
+  async notify({ deviceId, type, severity, title, body, data }) {
+    const saved = await Notification.create({ deviceId, type, severity, title, body, data });
+    await fcmService.sendToUser(deviceId, {
       title,
       body,
       data: {
@@ -16,31 +16,31 @@ class NotificationService {
     return saved;
   }
 
-  async getByUser(userId, page = 1, limit = 20) {
+  async getByUser(deviceId, page = 1, limit = 20) {
     const [items, unreadCount] = await Promise.all([
-      Notification.find({ userId })
+      Notification.find({ deviceId })
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit),
-      Notification.countDocuments({ userId, isRead: false }),
+      Notification.countDocuments({ deviceId, isRead: false }),
     ]);
     return { items, unreadCount };
   }
 
-  async markRead(id, userId) {
+  async markRead(id, deviceId) {
     return Notification.findOneAndUpdate(
-      { _id: id, userId },
+      { _id: id, deviceId },
       { isRead: true },
       { new: true }
     );
   }
 
-  async markAllRead(userId) {
-    return Notification.updateMany({ userId, isRead: false }, { isRead: true });
+  async markAllRead(deviceId) {
+    return Notification.updateMany({ deviceId, isRead: false }, { isRead: true });
   }
 
-  async getUnreadCount(userId) {
-    return Notification.countDocuments({ userId, isRead: false });
+  async getUnreadCount(deviceId) {
+    return Notification.countDocuments({ deviceId, isRead: false });
   }
 }
 

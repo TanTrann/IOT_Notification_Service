@@ -23,15 +23,15 @@ export function startMQTTListener() {
       return;
     }
 
-    const { userId, title, body, type, severity, data: extra } = data;
-    if (!userId || !title || !body) {
-      console.error('MQTT: missing required fields (userId, title, body)');
+    const { deviceId, title, body, type, severity, data: extra } = data;
+    if (!deviceId || !title || !body) {
+      console.error('MQTT: missing required fields (deviceId, title, body)');
       return;
     }
 
     try {
       await notificationService.notify({
-        userId,
+        deviceId,
         type:     type     || 'system',
         severity: severity || 'info',
         title,
@@ -39,7 +39,7 @@ export function startMQTTListener() {
         data:     extra || {},
       });
     } catch (err) {
-      console.error(`MQTT: failed to process notification for user ${userId}:`, err.message);
+      console.error(`MQTT: failed to process notification for user ${deviceId}:`, err.message);
     }
   });
 }

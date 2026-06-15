@@ -27,9 +27,9 @@ class FCMService {
     }
   }
 
-  async sendToUser(userId, notification) {
+  async sendToUser(deviceId, notification) {
     this._check();
-    const tokens = await FCMToken.find({ userId }).select('token');
+    const tokens = await FCMToken.find({ deviceId }).select('token');
     if (!tokens.length) return [];
     return Promise.allSettled(tokens.map(t => this.sendToDevice(t.token, notification)));
   }

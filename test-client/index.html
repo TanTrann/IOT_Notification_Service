@@ -70,8 +70,8 @@
     </div>
     <label>JWT Token</label>
     <input id="cfg-jwt" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." />
-    <label>User ID (phải khớp với userId trong JWT)</label>
-    <input id="cfg-userId" value="user_test_01" />
+    <label>User ID (phải khớp với deviceId trong JWT)</label>
+    <input id="cfg-deviceId" value="user_test_01" />
   </div>
 
   <!-- BƯỚC 3: MQTT -->
@@ -104,10 +104,10 @@
   <!-- BƯỚC 5: Publish MQTT -->
   <div class="card">
     <h2><span class="step-num">5</span>Publish MQTT <small style="color:#888;font-weight:normal">(giả lập Phong's MCP)</small></h2>
-    <div class="hint">userId phải khớp với bước 2 để service tìm đúng FCM token.</div>
+    <div class="hint">deviceId phải khớp với bước 2 để service tìm đúng FCM token.</div>
     <label>Payload (JSON)</label>
     <textarea id="notify-payload" style="min-height:160px">{
-  "userId":   "user_test_01",
+  "deviceId":   "user_test_01",
   "type":     "water",
   "severity": "warning",
   "title":    "Đất khô — Cần tưới nước",

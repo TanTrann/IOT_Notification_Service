@@ -2,7 +2,7 @@ import mongoose, { Schema } from 'mongoose';
 
 const notificationSchema = new Schema(
   {
-    userId:   { type: String, required: true },
+    deviceId:   { type: String, required: true },
     title:    { type: String, required: true },
     body:     { type: String, required: true },
     type:     { type: String, enum: ['disease', 'water', 'nutrition', 'light', 'system'] },
@@ -13,7 +13,7 @@ const notificationSchema = new Schema(
   { timestamps: true }
 );
 
-notificationSchema.index({ userId: 1, createdAt: -1 });
-notificationSchema.index({ userId: 1, isRead: 1 });
+notificationSchema.index({ deviceId: 1, createdAt: -1 });
+notificationSchema.index({ deviceId: 1, isRead: 1 });
 
 export default mongoose.model('Notification', notificationSchema);
