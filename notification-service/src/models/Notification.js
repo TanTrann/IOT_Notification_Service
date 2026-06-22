@@ -2,6 +2,7 @@ import mongoose, { Schema } from 'mongoose';
 
 const notificationSchema = new Schema(
   {
+    eventId: { type: String, unique: true, sparse: true },
     deviceId:   { type: String, required: true },
     title:    { type: String, required: true },
     body:     { type: String, required: true },

@@ -23,7 +23,7 @@ export function startMQTTListener() {
       return;
     }
 
-    const { deviceId, title, body, type, severity, data: extra } = data;
+    const { eventId, deviceId, title, body, type, severity, data: extra } = data;
     if (!deviceId || !title || !body) {
       console.error('MQTT: missing required fields (deviceId, title, body)');
       return;
@@ -31,6 +31,7 @@ export function startMQTTListener() {
 
     try {
       await notificationService.notify({
+        eventId,
         deviceId,
         type:     type     || 'system',
         severity: severity || 'info',

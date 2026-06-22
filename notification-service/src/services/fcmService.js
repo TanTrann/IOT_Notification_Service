@@ -8,11 +8,15 @@ class FCMService {
 
   async sendToDevice(token, { title, body, data = {} }) {
     this._check();
+    // FCM yêu cầu mọi giá trị trong `data` phải là string → ép kiểu trước khi gửi
+    const stringData = Object.fromEntries(
+      Object.entries({ ...data, clickAction: '/dashboard' }).map(([k, v]) => [k, String(v)])
+    );
     try {
       const response = await messaging.send({
         token,
         notification: { title, body },
-        data: { ...data, clickAction: '/dashboard' },
+        data: stringData,
         webpush: {
           notification: { title, body, icon: '/logo.png', badge: '/badge.png', vibrate: [200, 100, 200] },
           fcmOptions: { link: '/dashboard' },

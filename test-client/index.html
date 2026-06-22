@@ -54,8 +54,12 @@
     <h2><span class="step-num">1</span>Cấu hình chung</h2>
     <label>Notification Service URL</label>
     <input id="cfg-serverUrl" value="http://localhost:3001" />
-    <label>MQTT WebSocket URL</label>
-    <input id="cfg-mqtt" value="ws://localhost:9001" />
+    <label>MQTT WebSocket URL (HiveMQ Cloud — WSS port 8884)</label>
+    <input id="cfg-mqtt" value="wss://11a20bb1ae954c8d844aedfcb3be9322.s1.eu.hivemq.cloud:8884/mqtt" />
+    <label>MQTT Username</label>
+    <input id="cfg-mqtt-user" value="iot-service" />
+    <label>MQTT Password</label>
+    <input id="cfg-mqtt-pass" type="password" value="" placeholder="mật khẩu HiveMQ credentials" />
     <label>MQTT Topic</label>
     <input id="cfg-topic" value="iot/notifications" />
   </div>
@@ -65,13 +69,13 @@
     <h2><span class="step-num">2</span>JWT Token</h2>
     <div class="hint">
       Chạy lệnh sau để sinh JWT:<br>
-      <code>cd notification-service && node generate-token.js user_test_01</code><br>
+      <code>cd notification-service && node generate-token.js device_test_01</code><br>
       Paste kết quả vào ô bên dưới.
     </div>
     <label>JWT Token</label>
     <input id="cfg-jwt" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." />
-    <label>User ID (phải khớp với deviceId trong JWT)</label>
-    <input id="cfg-deviceId" value="user_test_01" />
+    <label>Device ID (phải khớp với deviceId trong JWT)</label>
+    <input id="cfg-deviceId" value="device_test_01" />
   </div>
 
   <!-- BƯỚC 3: MQTT -->
@@ -107,7 +111,7 @@
     <div class="hint">deviceId phải khớp với bước 2 để service tìm đúng FCM token.</div>
     <label>Payload (JSON)</label>
     <textarea id="notify-payload" style="min-height:160px">{
-  "deviceId":   "user_test_01",
+  "deviceId":   "device_test_01",
   "type":     "water",
   "severity": "warning",
   "title":    "Đất khô — Cần tưới nước",
@@ -147,8 +151,10 @@ function getJwt()       { return document.getElementById('cfg-jwt').value.trim()
 // ── MQTT ──────────────────────────────────────────────
 function connectMQTT() {
   const url = document.getElementById('cfg-mqtt').value;
+  const username = document.getElementById('cfg-mqtt-user').value.trim() || undefined;
+  const password = document.getElementById('cfg-mqtt-pass').value || undefined;
   if (mqttClient) mqttClient.end(true);
-  mqttClient = mqtt.connect(url);
+  mqttClient = mqtt.connect(url, { username, password });
   mqttClient.on('connect', () => {
     document.getElementById('mqtt-status').textContent = 'Đã kết nối';
     document.getElementById('mqtt-status').className = 'badge green';
