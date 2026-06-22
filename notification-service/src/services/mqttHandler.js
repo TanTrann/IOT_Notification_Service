@@ -1,5 +1,6 @@
 import { connectMQTT } from '../config/mqtt.js';
 import notificationService from './notificationService.js';
+import { translateEvent } from './eventTranslator.js';
 
 export function startMQTTListener() {
   const client = connectMQTT();
@@ -23,14 +24,19 @@ export function startMQTTListener() {
       return;
     }
 
-    const { eventId, deviceId, title, body, type, severity, data: extra } = data;
-    if (!deviceId || !title || !body) {
-      console.error('MQTT: missing required fields (deviceId, title, body)');
-      return;
-    }
-
-    try {
-      await notificationService.notify({
+    // Hỗ trợ 2 dạng payload:
+    //  - Sự kiện THÔ từ MCP server (Phong): có field `event` → tự dịch sang title/body
+    //  - Notification dựng sẵn (test-client / publish thủ công): có sẵn title/body
+    let notification;
+    if (data.event) {
+      notification = translateEvent(data);
+      if (!notification) {
+        console.log(`MQTT: bỏ qua sự kiện không cần notify: "${data.event}"`);
+        return;
+      }
+    } else {
+      const { eventId, deviceId, title, body, type, severity, data: extra } = data;
+      notification = {
         eventId,
         deviceId,
         type:     type     || 'system',
@@ -38,9 +44,18 @@ export function startMQTTListener() {
         title,
         body,
         data:     extra || {},
-      });
+      };
+    }
+
+    if (!notification.deviceId || !notification.title || !notification.body) {
+      console.error('MQTT: missing required fields (deviceId, title, body)');
+      return;
+    }
+
+    try {
+      await notificationService.notify(notification);
     } catch (err) {
-      console.error(`MQTT: failed to process notification for user ${deviceId}:`, err.message);
+      console.error(`MQTT: failed to process notification for device ${notification.deviceId}:`, err.message);
     }
   });
 }
