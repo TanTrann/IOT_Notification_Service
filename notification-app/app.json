@@ -1,0 +1,16 @@
+{
+  "expo": {
+    "name": "SmartFarm Notifications",
+    "slug": "smartfarm-notifications",
+    "version": "1.0.0",
+    "newArchEnabled": false,
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "platforms": ["android"],
+    "android": {
+      "package": "com.smartfarm.notifications",
+      "googleServicesFile": "./google-services.json"
+    },
+    "plugins": ["expo-notifications"]
+  }
+}

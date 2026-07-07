@@ -123,7 +123,19 @@ Index: `{ deviceId:1 }`.
 
 ---
 
-## 5. Nguyên tắc thiết kế
+## 5. Các client trong repo
+
+| Folder | Vai trò | Chạy |
+|---|---|---|
+| [`../../notification-web/`](../../notification-web/README.md) | Trung tâm thông báo cho người dùng cuối trên browser (push FCM + lịch sử + đã đọc) | `npm run dev` → port 3000 |
+| [`../../notification-app/`](../../notification-app/README.md) | App Android (React Native + Expo) — cùng tính năng với web, push native | `npx expo run:android` |
+| [`../../test-client/`](../../test-client/README.md) | Công cụ dev: giả lập ESP32 + server .NET của Phong để test end-to-end | `npm run dev` → port 8080 |
+
+Cả ba đăng ký FCM token qua `POST /token` với JWT — backend không phân biệt client nào.
+
+---
+
+## 6. Nguyên tắc thiết kế
 
 - **Chịu lỗi mềm (graceful degradation):** thiếu MQTT/MongoDB/Firebase → log cảnh báo, **không crash**.
 - **Chống trùng & chống spam:** `eventId` unique + edge-detection theo trạng thái.

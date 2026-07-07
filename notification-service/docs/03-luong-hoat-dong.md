@@ -181,4 +181,4 @@ Dùng `test-client` (xem [`../../test-client/README.md`](../../test-client/READM
 2. Mở test-client → kết nối MQTT → init Firebase → lấy & lưu token
 3. Bấm các nút kịch bản giả lập ("🌵 Đất khô", "💦 WATER_ON"...) → quan sát push hiện lên
 
-Người dùng cuối xem thông báo qua [`../../notification-web/`](../../notification-web/README.md) (trung tâm thông báo, port 3000).
+Người dùng cuối xem thông báo qua [`../../notification-web/`](../../notification-web/README.md) (browser, port 3000) hoặc [`../../notification-app/`](../../notification-app/README.md) (app Android native).
