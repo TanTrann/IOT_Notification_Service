@@ -27,7 +27,3 @@ export function connectMQTT() {
 
   return _client;
 }
-
-export function getMQTTClient() {
-  return _client;
-}

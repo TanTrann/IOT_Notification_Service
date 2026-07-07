@@ -1,5 +1,4 @@
 import FCMToken from '../models/FCMToken.js';
-import fcmService from '../services/fcmService.js';
 import notificationService from '../services/notificationService.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 
@@ -41,18 +40,4 @@ export const markRead = asyncHandler(async (req, res) => {
 export const markAllRead = asyncHandler(async (req, res) => {
   await notificationService.markAllRead(req.deviceId);
   res.json({ success: true, message: 'All notifications marked as read' });
-});
-
-export const subscribeToTopic = asyncHandler(async (req, res) => {
-  const { token, topic = 'iot_alerts_topic' } = req.body;
-  if (!token) return res.status(400).json({ success: false, message: 'Missing token' });
-  const result = await fcmService.subscribeToTopic(token, topic);
-  res.json({ success: true, message: `Subscribed to topic: ${topic}`, details: result });
-});
-
-export const unsubscribeFromTopic = asyncHandler(async (req, res) => {
-  const { token, topic = 'iot_alerts_topic' } = req.body;
-  if (!token) return res.status(400).json({ success: false, message: 'Missing token' });
-  const result = await fcmService.unsubscribeFromTopic(token, topic);
-  res.json({ success: true, message: `Unsubscribed from topic: ${topic}`, details: result });
 });

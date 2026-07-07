@@ -84,7 +84,7 @@ Khởi tạo theo thứ tự: nạp `.env` → init Firebase → `startMQTTListe
 | `mqttHandler.js` | `startMQTTListener()`: subscribe 2 topic, parse JSON, điều phối sang translator, đẩy kết quả vào `notificationService.notify()` |
 | `eventTranslator.js` | `evaluateSensorData(raw)`: so ngưỡng với **edge-detection** (chỉ báo khi đổi trạng thái). `translateControl(raw)`: ánh xạ lệnh → 1 thông báo |
 | `notificationService.js` | `notify()`: lưu DB + chống trùng (lỗi 11000) + gọi FCM. `getByUser()`, `markRead()`, `markAllRead()`, `getUnreadCount()` |
-| `fcmService.js` | `sendToDevice()`, `sendToUser()`, `sendToTopic()`, subscribe/unsubscribe topic; tự xóa token chết |
+| `fcmService.js` | `sendToDevice()`, `sendToUser()`; tự xóa token chết |
 
 ### 3.4. Tầng API — `controllers` / `routes` / `middlewares`
 - `routes/notificationRoutes.js`: định nghĩa endpoint dưới `/api/v1/notifications`.

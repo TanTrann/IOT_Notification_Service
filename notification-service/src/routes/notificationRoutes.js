@@ -7,16 +7,10 @@ import {
   markRead,
   removeToken,
   saveToken,
-  subscribeToTopic,
-  unsubscribeFromTopic,
 } from '../controllers/notificationController.js';
 import { auth } from '../middlewares/auth.js';
 
 const router = Router();
-
-// Subscribe / unsubscribe topic (public — không cần auth)
-router.post('/subscribe',   subscribeToTopic);
-router.post('/unsubscribe', unsubscribeFromTopic);
 
 // Frontend gọi để đăng ký / xóa FCM token (cần auth)
 router.post('/token',       auth, saveToken);

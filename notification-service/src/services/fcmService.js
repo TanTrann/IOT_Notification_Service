@@ -38,24 +38,6 @@ class FCMService {
     return Promise.allSettled(tokens.map(t => this.sendToDevice(t.token, notification)));
   }
 
-  async sendToTopic(topic, { title, body, data = {} }) {
-    this._check();
-    return messaging.send({
-      notification: { title, body },
-      data: Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v)])),
-      topic,
-    });
-  }
-
-  async subscribeToTopic(token, topic) {
-    this._check();
-    return messaging.subscribeToTopic(token, topic);
-  }
-
-  async unsubscribeFromTopic(token, topic) {
-    this._check();
-    return messaging.unsubscribeFromTopic(token, topic);
-  }
 }
 
 export default new FCMService();
