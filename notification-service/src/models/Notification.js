@@ -6,7 +6,7 @@ const notificationSchema = new Schema(
     deviceId:   { type: String, required: true },
     title:    { type: String, required: true },
     body:     { type: String, required: true },
-    type:     { type: String, enum: ['disease', 'water', 'nutrition', 'light', 'system'] },
+    type:     { type: String, enum: ['disease', 'water', 'nutrition', 'light', 'temperature', 'system'] },
     severity: { type: String, enum: ['critical', 'warning', 'info'], default: 'info' },
     data:     { type: Schema.Types.Mixed },
     isRead:   { type: Boolean, default: false },
