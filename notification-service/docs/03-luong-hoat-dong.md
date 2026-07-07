@@ -179,6 +179,6 @@ Dùng `test-client` (xem [`../../test-client/README.md`](../../test-client/READM
 
 1. Sinh JWT: `node generate-token.js device_test_01`
 2. Mở test-client → kết nối MQTT → init Firebase → lấy & lưu token
-3. Publish payload sensor (giữ `deviceId` khớp JWT) → quan sát push hiện lên
+3. Bấm các nút kịch bản giả lập ("🌵 Đất khô", "💦 WATER_ON"...) → quan sát push hiện lên
 
-Hoặc xem [runbook trong bộ nhớ dự án](../../README.md) để chạy MongoDB + Mosquitto + service cục bộ.
+Người dùng cuối xem thông báo qua [`../../notification-web/`](../../notification-web/README.md) (trung tâm thông báo, port 3000).
