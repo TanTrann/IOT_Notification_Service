@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SmartFarm — Trung tâm thông báo</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #f0f4f2; --card: #fff; --text: #1e2a26; --muted: #6b7a74;
+      --brand: #1f8a4c; --brand-dark: #176e3c;
+      --info: #2d7ff9; --warning: #e8930c; --critical: #e0442e;
+      --border: #e2e8e5;
+    }
+    body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+    .container { max-width: 640px; margin: 0 auto; padding: 20px 16px 60px; }
+
+    /* Header */
+    header { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+    header h1 { font-size: 1.25rem; flex: 1; }
+    .bell { position: relative; font-size: 1.5rem; }
+    .bell .badge-count {
+      position: absolute; top: -6px; right: -10px; background: var(--critical); color: #fff;
+      font-size: .68rem; font-weight: 700; border-radius: 999px; padding: 1px 6px; min-width: 18px; text-align: center;
+    }
+    .chip { font-size: .75rem; padding: 3px 10px; border-radius: 999px; background: #e7efe9; color: var(--muted); }
+    .chip.on { background: #d7f0e0; color: var(--brand-dark); font-weight: 600; }
+
+    /* Cards */
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px; margin-bottom: 14px; }
+    .card h2 { font-size: .95rem; margin-bottom: 12px; color: var(--muted); font-weight: 600; }
+    label { display: block; font-size: .8rem; color: var(--muted); margin-bottom: 4px; }
+    input, textarea {
+      width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: 8px;
+      font-size: .88rem; margin-bottom: 10px; background: #fafcfb;
+    }
+    textarea { resize: vertical; font-family: monospace; min-height: 60px; }
+    button {
+      padding: 9px 16px; background: var(--brand); color: #fff; border: none;
+      border-radius: 8px; cursor: pointer; font-size: .87rem; font-weight: 600; margin-right: 8px;
+    }
+    button:hover { background: var(--brand-dark); }
+    button.ghost { background: transparent; color: var(--brand-dark); border: 1px solid var(--border); font-weight: 500; }
+    button.ghost:hover { background: #eef4f0; }
+    button:disabled { opacity: .5; cursor: default; }
+    .hint { font-size: .78rem; color: var(--muted); background: #fbf6e9; border-left: 3px solid var(--warning);
+            padding: 8px 10px; border-radius: 6px; margin-bottom: 12px; }
+    .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+    /* Feed */
+    .feed-head { display: flex; align-items: center; margin: 20px 0 10px; gap: 8px; }
+    .feed-head h2 { font-size: 1rem; flex: 1; }
+    .noti {
+      display: flex; gap: 12px; background: var(--card); border: 1px solid var(--border);
+      border-left-width: 4px; border-radius: 12px; padding: 13px 14px; margin-bottom: 10px;
+      cursor: pointer; transition: background .15s;
+    }
+    .noti:hover { background: #fafdfb; }
+    .noti.sev-info     { border-left-color: var(--info); }
+    .noti.sev-warning  { border-left-color: var(--warning); }
+    .noti.sev-critical { border-left-color: var(--critical); }
+    .noti .icon { font-size: 1.35rem; line-height: 1.5; }
+    .noti .content { flex: 1; min-width: 0; }
+    .noti .title { font-size: .92rem; font-weight: 500; display: flex; align-items: center; gap: 6px; }
+    .noti.unread .title { font-weight: 700; }
+    .noti.unread .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--info); flex-shrink: 0; }
+    .noti .body { font-size: .85rem; color: var(--muted); margin-top: 3px; word-wrap: break-word; }
+    .noti .meta { font-size: .74rem; color: #98a6a0; margin-top: 6px; }
+    .empty { text-align: center; color: var(--muted); padding: 40px 0; font-size: .9rem; }
+    #load-more { display: block; margin: 14px auto 0; }
+
+    /* Toast */
+    #toast-zone { position: fixed; bottom: 20px; right: 20px; z-index: 99; display: flex; flex-direction: column; gap: 10px; }
+    .toast {
+      background: var(--text); color: #fff; border-radius: 10px; padding: 12px 16px;
+      max-width: 320px; box-shadow: 0 6px 24px rgba(0,0,0,.25); font-size: .85rem;
+      animation: slidein .25s ease;
+    }
+    .toast b { display: block; margin-bottom: 2px; }
+    @keyframes slidein { from { transform: translateX(30px); opacity: 0; } to { transform: none; opacity: 1; } }
+    .collapsed-body { display: none; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <span class="bell">🔔<span class="badge-count" id="unread-badge" hidden>0</span></span>
+    <h1>SmartFarm — Trung tâm thông báo</h1>
+    <span class="chip" id="fcm-chip">Chưa bật push</span>
+  </header>
+
+  <!-- Kết nối -->
+  <div class="card" id="setup-card">
+    <h2 style="cursor:pointer" onclick="toggleSetup()">⚙️ Kết nối <span id="setup-arrow">▾</span></h2>
+    <div id="setup-body">
+      <div class="hint">
+        Sinh JWT: <code>cd notification-service && node generate-token.js &lt;device_id&gt;</code><br>
+        <code>device_id</code> phải đúng thiết bị của Phong (vd <code>ESP32S3_Zone1</code>) thì mới nhận được cảnh báo của thiết bị đó.
+      </div>
+      <label>Notification Service URL</label>
+      <input id="cfg-server" value="http://localhost:3001" />
+      <label>JWT Token</label>
+      <textarea id="cfg-jwt" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."></textarea>
+      <div class="row">
+        <button onclick="saveAndConnect()">Lưu & Kết nối</button>
+        <button class="ghost" onclick="enablePush()">🔔 Bật nhận push</button>
+        <span class="chip" id="device-chip" hidden></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Feed -->
+  <div class="feed-head">
+    <h2>Thông báo <span id="unread-inline" style="color:var(--muted);font-weight:400;font-size:.85rem"></span></h2>
+    <button class="ghost" onclick="markAllRead()">✓ Đọc tất cả</button>
+    <button class="ghost" onclick="refresh()">↻ Làm mới</button>
+  </div>
+  <div id="feed"><div class="empty">Nhập JWT và bấm "Lưu &amp; Kết nối" để xem thông báo.</div></div>
+  <button id="load-more" class="ghost" onclick="loadMore()" hidden>Tải thêm</button>
+</div>
+
+<div id="toast-zone"></div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
+<script>
+// ── Firebase project config (khớp firebase-messaging-sw.js) ────────────────
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyCUaUnwE20Gi9V35CX9CkcDmqwwxFYZiNI",
+  authDomain: "smartfarmai-f1426.firebaseapp.com",
+  projectId: "smartfarmai-f1426",
+  messagingSenderId: "1071313553757",
+  appId: "1:1071313553757:web:d9ad58188bcde720ca80b4",
+};
+const VAPID_KEY = "BNOC91dgjosxTi-sHV8HaeTx3jKUAUwVAvyWY4tMc_zbMuoMmad0r1h3Rodl92k2bM_E6y4OmHiLP9jSsJ26G6Q";
+
+const TYPE_ICON = { water: '💧', light: '💡', temperature: '🌡️', nutrition: '🌱', disease: '🦠', system: '⚙️' };
+
+// ── State ───────────────────────────────────────────────────────────────────
+let page = 1, totalLoaded = 0, messaging = null;
+const cfg = JSON.parse(localStorage.getItem('notiweb-config') || '{}');
+
+function $(id) { return document.getElementById(id); }
+function serverUrl() { return ($('cfg-server').value || 'http://localhost:3001').replace(/\/$/, ''); }
+// Bỏ MỌI khoảng trắng/xuống dòng — copy JWT từ terminal hay dính wrap dòng giữa chuỗi
+function jwt() { return $('cfg-jwt').value.replace(/\s+/g, ''); }
+function api(path, opts = {}) {
+  return fetch(`${serverUrl()}/api/v1/notifications${path}`, {
+    ...opts,
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${jwt()}`, ...(opts.headers || {}) },
+  }).then(async r => {
+    const json = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(json.message || `HTTP ${r.status}`);
+    return json;
+  });
+}
+function parseJwt(t) {
+  try { return JSON.parse(atob(t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); }
+  catch { return null; }
+}
+
+// ── Setup / connect ─────────────────────────────────────────────────────────
+function toggleSetup() {
+  $('setup-body').classList.toggle('collapsed-body');
+  $('setup-arrow').textContent = $('setup-body').classList.contains('collapsed-body') ? '▸' : '▾';
+}
+
+async function saveAndConnect() {
+  if (!jwt()) return toast('Thiếu JWT', 'Dán JWT token vào ô cấu hình trước.');
+  const claims = parseJwt(jwt());
+  if (!claims) return toast('JWT không đúng định dạng', 'Kiểm tra lại token — copy đủ, không thiếu ký tự.');
+  if (claims.exp && claims.exp * 1000 < Date.now()) {
+    return toast('JWT đã hết hạn', 'Sinh token mới: node generate-token.js <device_id>');
+  }
+  $('cfg-jwt').value = jwt();   // ghi lại bản đã làm sạch khoảng trắng
+  localStorage.setItem('notiweb-config', JSON.stringify({ server: serverUrl(), jwt: jwt() }));
+  if (claims.deviceId) {
+    $('device-chip').textContent = `📟 ${claims.deviceId}`;
+    $('device-chip').hidden = false;
+  }
+  await refresh();
+  toggleSetupCollapsed(true);
+  // Đã cấp quyền từ trước thì tự bật lại push (token có thể đổi theo browser profile)
+  if (Notification.permission === 'granted') enablePush(true);
+}
+
+function toggleSetupCollapsed(collapsed) {
+  $('setup-body').classList.toggle('collapsed-body', collapsed);
+  $('setup-arrow').textContent = collapsed ? '▸' : '▾';
+}
+
+// ── Push (FCM) ──────────────────────────────────────────────────────────────
+async function enablePush(silent = false) {
+  if (!jwt()) return toast('Thiếu JWT', 'Dán JWT rồi bấm "Lưu & Kết nối" trước.');
+  try {
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') return toast('Bị từ chối', 'Browser không cho phép hiện thông báo.');
+
+    if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+    messaging = firebase.messaging();
+
+    const swReg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+    const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
+    await api('/token', { method: 'POST', body: JSON.stringify({ token, device: 'web' }) });
+
+    // Push đến khi tab đang mở → toast + refresh danh sách
+    messaging.onMessage(payload => {
+      const n = payload.notification || payload.data || {};
+      toast(n.title || 'Thông báo', n.body || '');
+      refresh();
+    });
+
+    $('fcm-chip').textContent = 'Push: đang bật';
+    $('fcm-chip').className = 'chip on';
+    if (!silent) toast('Sẵn sàng 🔔', 'Đã đăng ký nhận cảnh báo từ hệ thống.');
+  } catch (e) {
+    toast('Lỗi bật push', e.message);
+  }
+}
+
+// ── Feed ────────────────────────────────────────────────────────────────────
+async function refresh() {
+  page = 1;
+  try {
+    const { items, unreadCount } = await api(`/?page=1&limit=20`);
+    renderFeed(items, false);
+    totalLoaded = items.length;
+    $('load-more').hidden = items.length < 20;
+    setUnread(unreadCount);
+  } catch (e) {
+    $('feed').innerHTML = `<div class="empty">Không tải được thông báo: ${e.message}</div>`;
+  }
+}
+
+async function loadMore() {
+  page += 1;
+  const { items } = await api(`/?page=${page}&limit=20`);
+  renderFeed(items, true);
+  totalLoaded += items.length;
+  $('load-more').hidden = items.length < 20;
+}
+
+function renderFeed(items, append) {
+  const feed = $('feed');
+  if (!append) feed.innerHTML = '';
+  if (!items.length && !append) {
+    feed.innerHTML = '<div class="empty">Chưa có thông báo nào. Khi Phong phát cảnh báo, nó sẽ hiện ở đây.</div>';
+    return;
+  }
+  for (const n of items) feed.appendChild(renderItem(n));
+}
+
+function renderItem(n) {
+  const el = document.createElement('div');
+  el.className = `noti sev-${n.severity || 'info'}${n.isRead ? '' : ' unread'}`;
+  el.innerHTML = `
+    <div class="icon">${TYPE_ICON[n.type] || '🔔'}</div>
+    <div class="content">
+      <div class="title"><span>${esc(n.title)}</span>${n.isRead ? '' : '<span class="dot"></span>'}</div>
+      <div class="body">${esc(n.body)}</div>
+      <div class="meta">${esc(n.deviceId || '')} · ${timeAgo(n.createdAt)}</div>
+    </div>`;
+  el.onclick = () => markRead(n, el);
+  return el;
+}
+
+async function markRead(n, el) {
+  if (n.isRead) return;
+  try {
+    await api(`/${n._id}/read`, { method: 'PATCH' });
+    n.isRead = true;
+    el.classList.remove('unread');
+    el.querySelector('.dot')?.remove();
+    bumpUnread(-1);
+  } catch (e) { toast('Lỗi', e.message); }
+}
+
+async function markAllRead() {
+  try {
+    await api('/read-all', { method: 'PATCH' });
+    document.querySelectorAll('.noti.unread').forEach(el => {
+      el.classList.remove('unread');
+      el.querySelector('.dot')?.remove();
+    });
+    setUnread(0);
+  } catch (e) { toast('Lỗi', e.message); }
+}
+
+let unreadCount = 0;
+function setUnread(c) {
+  unreadCount = Math.max(0, c);
+  $('unread-badge').hidden = unreadCount === 0;
+  $('unread-badge').textContent = unreadCount > 99 ? '99+' : unreadCount;
+  $('unread-inline').textContent = unreadCount ? `(${unreadCount} chưa đọc)` : '';
+}
+function bumpUnread(d) { setUnread(unreadCount + d); }
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+function esc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
+function timeAgo(iso) {
+  if (!iso) return '';
+  const s = Math.floor((Date.now() - new Date(iso)) / 1000);
+  if (s < 60) return 'vừa xong';
+  if (s < 3600) return `${Math.floor(s / 60)} phút trước`;
+  if (s < 86400) return `${Math.floor(s / 3600)} giờ trước`;
+  return new Date(iso).toLocaleString('vi-VN');
+}
+function toast(title, body) {
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.innerHTML = `<b>${esc(title)}</b>${esc(body)}`;
+  $('toast-zone').appendChild(t);
+  setTimeout(() => t.remove(), 6000);
+}
+
+// ── Boot ────────────────────────────────────────────────────────────────────
+if (cfg.server) $('cfg-server').value = cfg.server;
+if (cfg.jwt)    $('cfg-jwt').value = cfg.jwt;
+if (cfg.jwt) saveAndConnect();
+
+// Quay lại tab → cập nhật (push background chỉ hiện system-notification, không chạy JS trong tab)
+window.addEventListener('focus', () => { if (jwt()) refresh(); });
+setInterval(() => { if (jwt() && !document.hidden) refresh(); }, 30000);
+</script>
+</body>
+</html>
