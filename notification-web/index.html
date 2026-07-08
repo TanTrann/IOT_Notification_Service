@@ -95,7 +95,7 @@
     <div id="setup-body">
       <div class="hint">
         Sinh JWT: <code>cd notification-service && node generate-token.js &lt;device_id&gt;</code><br>
-        <code>device_id</code> phải đúng thiết bị của Phong (vd <code>ESP32S3_Zone1</code>) thì mới nhận được cảnh báo của thiết bị đó.
+        <code>device_id</code> phải khớp thiết bị đang gửi dữ liệu (vd <code>device_test_01</code>) thì mới nhận được cảnh báo của thiết bị đó.
       </div>
       <label>Notification Service URL</label>
       <input id="cfg-server" value="http://localhost:3001" />
@@ -244,7 +244,7 @@ function renderFeed(items, append) {
   const feed = $('feed');
   if (!append) feed.innerHTML = '';
   if (!items.length && !append) {
-    feed.innerHTML = '<div class="empty">Chưa có thông báo nào. Khi Phong phát cảnh báo, nó sẽ hiện ở đây.</div>';
+    feed.innerHTML = '<div class="empty">Chưa có thông báo nào. Khi hệ thống phát cảnh báo, nó sẽ hiện ở đây.</div>';
     return;
   }
   for (const n of items) feed.appendChild(renderItem(n));

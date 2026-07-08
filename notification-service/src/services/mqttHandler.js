@@ -2,7 +2,7 @@ import { connectMQTT } from '../config/mqtt.js';
 import notificationService from './notificationService.js';
 import { evaluateSensorData, translateControl } from './eventTranslator.js';
 
-// Nghe ké 2 topic của Phong trên broker HiveMQ Cloud, tự dịch → notification → FCM.
+// Nghe ké 2 topic của hệ IoT trên broker HiveMQ Cloud, tự dịch → notification → FCM.
 export function startMQTTListener() {
   const client = connectMQTT();
   if (!client) return;
@@ -10,7 +10,7 @@ export function startMQTTListener() {
   const SENSOR_TOPIC  = process.env.MQTT_SENSOR_TOPIC  || 'xmini/sensor_data';
   const CONTROL_TOPIC = process.env.MQTT_CONTROL_TOPIC || 'xmini/control';
 
-  // Payload xmini/control của Phong KHÔNG có device_id → nhớ device của bản tin
+  // Payload xmini/control KHÔNG có device_id → nhớ device của bản tin
   // sensor gần nhất để gán cho lệnh (lệnh auto luôn được server bắn ra ngay sau
   // bản tin sensor kích hoạt rule, nên với demo 1 thiết bị là chính xác).
   let lastSensorDeviceId = process.env.DEFAULT_DEVICE_ID || null;

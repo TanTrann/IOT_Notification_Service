@@ -27,9 +27,9 @@ npm run dev
 1. Đảm bảo `notification-service` đang chạy (`npm run dev` trong `notification-service/`).
 2. Sinh JWT cho thiết bị muốn theo dõi:
    ```bash
-   cd notification-service && node generate-token.js ESP32S3_Zone1
+   cd notification-service && node generate-token.js device_test_01
    ```
-   `device_id` phải đúng thiết bị của Phong (hoặc `device_test_01` khi test bằng test-client).
+   `device_id` phải khớp thiết bị đang gửi dữ liệu (`device_test_01` khi test bằng test-client, hoặc device_id của thiết bị thật).
 3. Mở trang → dán JWT → **Lưu & Kết nối** → **🔔 Bật nhận push** → cho phép quyền thông báo.
 4. Xong — khi Phong phát sự kiện (hoặc bạn giả lập bằng `test-client/`), thông báo tự hiện.
 

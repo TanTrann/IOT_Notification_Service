@@ -1,13 +1,13 @@
 // ============================================================================
-// DỊCH DỮ LIỆU THÔ TỪ PHONG → notification dễ hiểu cho người dùng.
+// DỊCH DỮ LIỆU THÔ TỪ HỆ IOT → notification dễ hiểu cho người dùng.
 // ----------------------------------------------------------------------------
-// Theo "hợp đồng dữ liệu" với Phong, ta NGHE KÉ 2 topic trên cùng broker:
-//   • xmini/sensor_data : Phong (ESP32) gửi SỐ ĐO CẢM BIẾN thô — CHƯA phải cảnh báo.
+// Theo "hợp đồng dữ liệu" với hệ IoT, ta NGHE KÉ 2 topic trên cùng broker:
+//   • xmini/sensor_data : thiết bị ESP32 gửi SỐ ĐO CẢM BIẾN thô — CHƯA phải cảnh báo.
 //                         → service TỰ so sánh với ngưỡng để quyết định có báo không.
-//   • xmini/control     : server .NET gửi LỆNH tự động (WATER_ON / LIGHT_ON ...).
+//   • xmini/control     : server điều khiển .NET gửi LỆNH tự động (WATER_ON / LIGHT_ON ...).
 //                         → dịch sang câu "hệ thống đã tự động ...".
 // Payload sensor dùng snake_case: device_id, temperature_c, soil_moisture_percent, light_lux
-// Payload control (theo MqttBackgroundService.cs phía Phong) — KHÔNG có device_id:
+// Payload control (theo MqttBackgroundService.cs của server điều khiển) — KHÔNG có device_id:
 //   { "command": "WATER_ON", "commandId": "...", "parameters": { duration, reason, ruleId, currentMoisture } }
 // ============================================================================
 
@@ -15,7 +15,7 @@
 const TH = {
   soilMin:  Number(process.env.THRESHOLD_SOIL_MOISTURE_MIN ?? 30),  // % — thấp hơn = thiếu nước
   tempMax:  Number(process.env.THRESHOLD_TEMP_MAX          ?? 35),  // °C — cao hơn = quá nóng
-  // Thiết bị xmini của Phong đo light_lux cỡ vài chục (demo ~57 lux), rule đèn
+  // Thiết bị xmini đo light_lux cỡ vài chục (demo ~57 lux), rule đèn
   // phía server .NET mặc định min 25 / max 60 → ngưỡng ở đây phải cùng scale đó.
   lightMin: Number(process.env.THRESHOLD_LIGHT_MIN         ?? 25),  // lux — thấp hơn = thiếu sáng
 };
@@ -81,7 +81,7 @@ export function evaluateSensorData(raw) {
 }
 
 // ── TOPIC xmini/control ────────────────────────────────────────────────────
-// Server .NET của Phong chỉ phát 4 lệnh: WATER_ON/OFF, LIGHT_ON/OFF.
+// Server điều khiển .NET chỉ phát 4 lệnh: WATER_ON/OFF, LIGHT_ON/OFF.
 const COMMAND = {
   WATER_ON:  { type: 'water', title: 'Đã tự động tưới nước', verb: 'bật tưới nước' },
   WATER_OFF: { type: 'water', title: 'Đã ngừng tưới nước',   verb: 'tắt tưới nước' },
@@ -90,7 +90,7 @@ const COMMAND = {
 };
 
 // Nhận 1 bản tin lệnh → trả về 1 notification (hoặc null nếu không đọc được).
-// LƯU Ý: payload control của Phong KHÔNG có device_id (topic dùng chung cho mọi
+// LƯU Ý: payload control KHÔNG có device_id (topic dùng chung cho mọi
 // thiết bị xmini) → deviceId do mqttHandler suy từ bản tin sensor gần nhất
 // (hoặc DEFAULT_DEVICE_ID) rồi truyền vào đây.
 export function translateControl(raw, deviceId) {

@@ -48,7 +48,7 @@
 </head>
 <body>
 <div class="container">
-  <h1>🌿 Notification Service — Test Client (giả lập hệ của Phong)</h1>
+  <h1>🌿 Notification Service — Test Client (giả lập hệ IoT)</h1>
 
   <!-- BƯỚC 1: Config chung -->
   <div class="card">
@@ -86,7 +86,7 @@
     <h2><span class="step-num">3</span>Kết nối MQTT</h2>
     <div class="hint">
       Sau khi kết nối, client tự <b>subscribe cả 2 topic</b> — mọi bản tin trên broker
-      (kể cả từ thiết bị/server thật của Phong nếu đang chạy) sẽ hiện ở Log với tag 📥.
+      (kể cả từ thiết bị/server thật nếu đang chạy) sẽ hiện ở Log với tag 📥.
     </div>
     <button onclick="connectMQTT()">Kết nối</button>
     <span id="mqtt-status" class="badge red">Chưa kết nối</span>
@@ -116,10 +116,10 @@
   <div class="card">
     <h2><span class="step-num">5</span>Giả lập ESP32 → <code>xmini/sensor_data</code></h2>
     <div class="hint">
-      Payload snake_case đúng format thiết bị xmini của Phong; <code>device_id</code> lấy từ bước 2.
+      Payload snake_case đúng format thiết bị xmini; <code>device_id</code> lấy từ bước 2.
       Service chỉ báo khi <b>chuyển trạng thái</b> (edge-detection): bấm "Đất khô" 2 lần chỉ ra
       1 thông báo — bấm "Đất ẩm lại" (báo hồi phục) rồi mới báo khô tiếp được.
-      Nếu server .NET của Phong đang chạy trên cùng broker, nó cũng nhận bản tin này và có thể
+      Nếu server điều khiển .NET đang chạy trên cùng broker, nó cũng nhận bản tin này và có thể
       tự phát lệnh thật xuống <code>xmini/control</code> → demo được trọn vòng.
     </div>
     <button onclick="pubSensor({ soil_moisture_percent: 22 })">🌵 Đất khô (22%)</button>
@@ -144,7 +144,7 @@
   <div class="card">
     <h2><span class="step-num">6</span>Giả lập server .NET → <code>xmini/control</code></h2>
     <div class="hint">
-      Đúng format server của Phong publish: <code>{ command, commandId, parameters }</code> —
+      Đúng format server điều khiển publish: <code>{ command, commandId, parameters }</code> —
       <b>không có device_id</b>. Service gán lệnh cho device của bản tin sensor <b>gần nhất</b>
       (hoặc <code>DEFAULT_DEVICE_ID</code> trong .env), nên hãy publish 1 bản tin sensor ở bước 5 trước.
       Mỗi lần bấm sinh <code>commandId</code> mới → thông báo mới; muốn test <b>chống trùng</b>
@@ -204,7 +204,7 @@ function connectMQTT() {
     document.getElementById('mqtt-status').textContent = 'Đã kết nối';
     document.getElementById('mqtt-status').className = 'badge green';
     log(`✅ MQTT kết nối tới ${url}`, 'ok');
-    // Nghe cả 2 topic để thấy mọi data chạy trên broker (của mình lẫn của Phong)
+    // Nghe cả 2 topic để thấy mọi data chạy trên broker (của mình lẫn của hệ thật)
     const topics = [getSensorTopic(), getControlTopic()];
     mqttClient.subscribe(topics, { qos: 1 }, err => {
       if (err) log('❌ Subscribe thất bại: ' + err.message, 'err');
