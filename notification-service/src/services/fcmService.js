@@ -33,8 +33,7 @@ class FCMService {
 
   async sendToUser(deviceId, notification) {
     this._check();
-    // Tìm mọi token (browser/app) có deviceId này trong danh sách đăng ký của nó.
-    const tokens = await FCMToken.find({ deviceIds: deviceId }).select('token');
+    const tokens = await FCMToken.find({ deviceId }).select('token');
     if (!tokens.length) return [];
     return Promise.allSettled(tokens.map(t => this.sendToDevice(t.token, notification)));
   }

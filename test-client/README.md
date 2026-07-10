@@ -27,7 +27,7 @@ npm run dev
 ## Luồng test
 
 1. **Bước 1 — Cấu hình:** MQTT URL + username/password, 2 topic.
-2. **Bước 2 — Device ID & JWT:** để `device_test_01`, dán `JWT_SECRET` (từ `notification-service/.env`) → "🔑 Sinh JWT" → "📋 Copy" → dán vào notification-web. Secret được nhớ trong localStorage cho lần sau.
+2. **Bước 2 — Device ID & JWT:** để `ESP32S3_Zone1`, dán `JWT_SECRET` (từ `notification-service/.env`) → "🔑 Sinh JWT" → "📋 Copy" → dán vào notification-web. Secret được nhớ trong localStorage cho lần sau.
 3. **Bước 3 — Kết nối MQTT:** badge xanh, client tự subscribe 2 topic; bản tin đến hiện ở Log (📥).
 4. **Bước 4 — Giả lập ESP32:** bấm nút kịch bản ("🌵 Đất khô", "🔥 Quá nóng"...) để publish sensor.
 5. **Bước 5 — Giả lập server .NET:** bấm WATER_ON / LIGHT_ON... để publish lệnh.

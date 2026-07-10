@@ -29,7 +29,9 @@ npm start → src/index.js
 
 ## 2. Luồng dữ liệu cảm biến
 
-**Kích hoạt:** thiết bị publish lên topic `xmini/sensor_data`.
+**Kích hoạt:** thiết bị publish số đo cảm biến. Service nghe **2 họ topic** (giống server .NET của Phong):
+- `xmini/sensor_data` — payload snake_case (`device_id`, `soil_moisture_percent`, `temperature_c`, `light_lux`), `device_id` nằm trong payload.
+- `planttree/{deviceId}/sensors` — payload camelCase (`soilMoisture`, `temperature`, `lightLevel`…), `deviceId` lấy **từ topic** (`normalizePlanttreeSensor` map về cùng field trước khi xử lý).
 
 ```
 Thiết bị ──publish──► MQTT (xmini/sensor_data)
@@ -87,7 +89,9 @@ Thiết bị ──publish──► MQTT (xmini/sensor_data)
 
 ## 3. Luồng lệnh điều khiển
 
-**Kích hoạt:** server tự động publish lên topic `xmini/control`.
+**Kích hoạt:** server tự động publish lệnh. Service nghe **2 họ topic**:
+- `xmini/control` — payload **không có** `device_id` → gán cho `lastSensorDeviceId` (device của bản tin sensor gần nhất).
+- `planttree/{deviceId}/commands` — `deviceId` lấy **thẳng từ topic** → không phải suy đoán, chính xác khi có nhiều thiết bị cùng gửi dữ liệu.
 
 ```
 Server ──publish──► MQTT (xmini/control)
@@ -179,7 +183,7 @@ Mọi thao tác lọc theo `deviceId` của JWT → người dùng chỉ thấy/
 Dùng `test-client` (xem [`../../test-client/README.md`](../../test-client/README.md)):
 
 1. Mở test-client → bước 2: nhập Device ID + `JWT_SECRET` (từ `.env`) → Sinh JWT → Copy
-   (hoặc CLI: `node generate-token.js device_test_01`)
+   (hoặc CLI: `node generate-token.js ESP32S3_Zone1`)
 2. Mở notification-web → dán JWT → Lưu & Kết nối → Bật nhận push
 3. Quay lại test-client → kết nối MQTT → bấm các nút kịch bản giả lập ("🌵 Đất khô", "💦 WATER_ON"...) → push hiện lên ở notification-web
 

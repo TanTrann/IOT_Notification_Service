@@ -28,24 +28,20 @@ xử lý và tạo thông báo. Website chỉ làm 2 việc:
 ## 2. Xác thực — đăng nhập & JWT
 
 Mọi API thông báo cần header `Authorization: Bearer <JWT>`. Token là HS256, payload mang thiết bị
-của user — hỗ trợ **1 hoặc nhiều thiết bị**:
+của user:
 
 ```json
-// 1 thiết bị
-{ "deviceId": "device_A", "exp": <unix seconds> }
-
-// nhiều thiết bị (1 user có nhiều thiết bị) — dùng deviceIds (mảng)
-{ "deviceIds": ["device_A", "device_B"], "exp": <unix seconds> }
+{ "deviceId": "ESP32S3_Zone1", "exp": <unix seconds> }
 ```
 
 ### Cách web lấy JWT: đăng nhập
 
 Web **không** tự sign token (sign cần `JWT_SECRET` — lộ ở client là hỏng). Thay vào đó gọi endpoint
-đăng nhập, backend verify mật khẩu rồi trả JWT đã gắn sẵn `deviceIds` của user:
+đăng nhập, backend verify mật khẩu rồi trả JWT đã gắn sẵn `deviceId` của user:
 
 ```
 POST /api/v1/auth/login      body: { "username": "...", "password": "..." }
-→ 200 { success, token, expiresIn, user: { username, deviceIds } }
+→ 200 { success, token, expiresIn, user: { username, deviceId } }
 → 401 { success:false, message:"Invalid credentials" }
 ```
 
@@ -57,21 +53,16 @@ const { token } = await (await fetch(`${BASE_URL}/api/v1/auth/login`, {
 // dùng token này cho MỌI request thông báo (Authorization: Bearer <token>)
 ```
 
-Tài khoản demo tạo bằng: `node seed-users.js <username> <password> <deviceId...>` (mặc định
-`demo` / `demo1234` / `device_test_01`).
+Tài khoản demo tạo bằng: `node seed-users.js <username> <password> <deviceId>` (mặc định
+`demo` / `demo1234` / `ESP32S3_Zone1`).
 
 > **Production:** endpoint `/api/v1/auth/login` ở đây đóng vai **identity backend mẫu**. Ở hệ thật,
 > phần đăng nhập/quản lý user thường nằm ở backend riêng của bạn — chỉ cần nó dùng **cùng
-> `JWT_SECRET`** và ký payload `{ deviceIds }` như trên là notification-service chấp nhận. `JWT_SECRET`
+> `JWT_SECRET`** và ký payload `{ deviceId }` như trên là notification-service chấp nhận. `JWT_SECRET`
 > luôn chỉ ở phía server, không bao giờ xuống client.
 
-API trả/sửa thông báo của **mọi `deviceId` trong token** (gộp thành 1 inbox), và push realtime
-tới thiết bị dùng token này cho **bất kỳ** thiết bị nào trong danh sách. Token hết hạn → API trả
-401 `Invalid or expired token` → đăng nhập lại. Khi user thêm/bớt thiết bị → cập nhật `deviceIds`
-của user rồi đăng nhập lại (token mới) và `POST /token` lại để cập nhật danh sách nhận push.
-
-> **Tương thích:** token cũ chỉ có `deviceId` (một chuỗi) vẫn chạy bình thường — service tự
-> coi như danh sách 1 phần tử.
+API trả/sửa thông báo của đúng `deviceId` trong token. Token hết hạn → API trả 401
+`Invalid or expired token` → đăng nhập lại.
 
 ---
 
@@ -93,7 +84,7 @@ Một item thông báo:
 ```json
 {
   "_id": "66b...",
-  "deviceId": "device_test_01",
+  "deviceId": "ESP32S3_Zone1",
   "title": "Độ ẩm đất",
   "body": "Độ ẩm đất hiện tại 22%.",
   "type": "water",          // water | light | temperature | nutrition | disease | system
@@ -159,10 +150,7 @@ messaging.onBackgroundMessage(payload => {
 - **CORS**: origin của bạn phải nằm trong `ALLOWED_ORIGINS` của service — báo cho Tân thêm.
 - **Push không tới?** Kiểm tra: đã `POST /token` thành công chưa, quyền notification của
   browser, và service worker đăng ký đúng scope root.
-- **Mỗi user nhiều browser/máy**: cứ `POST /token` cho từng cái — mỗi token gắn cả danh
-  sách `deviceIds` của user; sự kiện của bất kỳ thiết bị nào cũng push tới mọi browser đó,
-  token chết tự bị xóa.
-- **Lọc theo thiết bị trên UI**: inbox đã gộp mọi thiết bị; mỗi item có field `deviceId`
-  nên bạn tự lọc/nhóm phía client (vd dropdown "Tất cả / Thiết bị A / B"), không cần API mới.
+- **Mỗi user nhiều browser/máy**: cứ `POST /token` cho từng cái — service gửi push song song
+  tới mọi token của `deviceId` đó, token chết tự bị xóa.
 - **Realtime khi tab mở**: ngoài push, nên refresh danh sách khi tab focus lại
   (background push không chạy được JS trong tab).

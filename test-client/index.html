@@ -69,7 +69,7 @@
   <div class="card">
     <h2><span class="step-num">2</span>Device ID & sinh JWT</h2>
     <label>Device ID (gắn vào bản tin sensor)</label>
-    <input id="cfg-deviceId" value="device_test_01" />
+    <input id="cfg-deviceId" value="ESP32S3_Zone1" />
     <label>JWT_SECRET (copy từ notification-service/.env)</label>
     <input id="cfg-secret" type="password" placeholder="dán JWT_SECRET vào đây" />
     <button onclick="genJwt()">🔑 Sinh JWT (hạn 30 ngày)</button>
@@ -110,7 +110,7 @@
     <button onclick="pubSensor({ light_lux: 57.5 })">☀️ Đủ sáng (57.5 lux)</button>
     <label style="margin-top:8px">Payload vừa gửi (tự chỉnh được rồi bấm Publish)</label>
     <textarea id="sensor-payload" style="min-height:150px">{
-  "device_id": "device_test_01",
+  "device_id": "ESP32S3_Zone1",
   "temperature_c": 28,
   "humidity_percent": 65,
   "light_lux": 57.5,

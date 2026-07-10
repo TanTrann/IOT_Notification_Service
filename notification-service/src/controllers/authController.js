@@ -24,16 +24,12 @@ export const login = asyncHandler(async (req, res) => {
   }
 
   const expiresIn = process.env.JWT_EXPIRES || '30d';
-  // 1 thiết bị → { deviceId } (tương thích cũ); nhiều → { deviceIds: [...] }
-  const payload = user.deviceIds.length === 1
-    ? { deviceId: user.deviceIds[0] }
-    : { deviceIds: user.deviceIds };
-  const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn });
+  const token = jwt.sign({ deviceId: user.deviceId }, process.env.JWT_SECRET, { expiresIn });
 
   res.json({
     success: true,
     token,
     expiresIn,
-    user: { username: user.username, deviceIds: user.deviceIds },
+    user: { username: user.username, deviceId: user.deviceId },
   });
 });

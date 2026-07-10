@@ -139,7 +139,7 @@ Cả ba đăng ký FCM token qua `POST /token` với JWT — backend không phâ
 
 - **Chịu lỗi mềm (graceful degradation):** thiếu MQTT/MongoDB/Firebase → log cảnh báo, **không crash**.
 - **Chống trùng & chống spam:** `eventId` unique + bỏ qua khi số đo không đổi.
-- **Đa thiết bị:** một user có nhiều `deviceIds`; inbox gộp chung, push tới mọi thiết bị.
+- **Đa phiên:** một `deviceId` có nhiều FCM token (nhiều browser/máy); push gửi song song tới tất cả.
 - **Tách lớp rõ ràng:** config → services → (api: routes/controllers). MQTT và REST dùng chung tầng service.
 - **Bảo mật:** JWT cho route bảo vệ, Helmet headers, CORS whitelist, ẩn chi tiết lỗi ở production.
 

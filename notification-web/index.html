@@ -203,8 +203,8 @@ async function login() {
 // Hiển thị trạng thái đã đăng nhập. user có thể không có (khi khôi phục từ localStorage) → suy từ token.
 function onLoggedIn(user) {
   const claims = parseJwt(authToken) || {};
-  const ids = user?.deviceIds || claims.deviceIds || (claims.deviceId ? [claims.deviceId] : []);
-  $('user-chip').textContent = `👤 ${user?.username || cfg.username || ''} · ${ids.join(', ') || '(chưa gắn thiết bị)'}`;
+  const deviceId = user?.deviceId || claims.deviceId || '';
+  $('user-chip').textContent = `👤 ${user?.username || cfg.username || ''} · ${deviceId || '(chưa gắn thiết bị)'}`;
   $('login-form').hidden = true;
   $('session-box').hidden = false;
   toggleSetupCollapsed(true);

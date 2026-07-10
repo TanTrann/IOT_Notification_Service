@@ -25,8 +25,8 @@ npm run dev
 ## Sử dụng
 
 1. Đảm bảo `notification-service` đang chạy (`npm run dev` trong `notification-service/`).
-2. Lấy JWT cho thiết bị muốn theo dõi: mở **test-client** (bước 2) → nhập Device ID + `JWT_SECRET` → "🔑 Sinh JWT" → "📋 Copy". (Hoặc dùng CLI: `cd notification-service && node generate-token.js device_test_01`.)
-   `device_id` phải khớp thiết bị đang gửi dữ liệu (`device_test_01` khi test bằng test-client, hoặc device_id của thiết bị thật).
+2. Lấy JWT cho thiết bị muốn theo dõi: mở **test-client** (bước 2) → nhập Device ID + `JWT_SECRET` → "🔑 Sinh JWT" → "📋 Copy". (Hoặc dùng CLI: `cd notification-service && node generate-token.js ESP32S3_Zone1`.)
+   `device_id` phải khớp thiết bị đang gửi dữ liệu (`ESP32S3_Zone1` khi test bằng test-client, hoặc device_id của thiết bị thật).
 3. Mở trang → dán JWT → **Lưu & Kết nối** → **🔔 Bật nhận push** → cho phép quyền thông báo.
 4. Xong — khi Phong phát sự kiện (hoặc bạn giả lập bằng `test-client/`), thông báo tự hiện.
 
@@ -35,7 +35,7 @@ Cấu hình (server URL + JWT) lưu trong `localStorage`, lần sau mở trang t
 ## Demo nhanh (không cần thiết bị thật)
 
 Mở song song 2 trang:
-- `notification-web` (port 3000) — người dùng, JWT của `device_test_01`.
+- `notification-web` (port 3000) — người dùng, JWT của `ESP32S3_Zone1`.
 - `test-client` (port 8080) — giả lập: bấm "🌵 Đất khô (22%)".
 
 → Trang này lập tức hiện toast **"Cây đang thiếu nước"** + badge chưa đọc tăng.
