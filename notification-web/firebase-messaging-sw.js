@@ -15,8 +15,15 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
+// Bản SW mới có hiệu lực ngay, không chờ đóng hết tab
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', (e) => e.waitUntil(clients.claim()));
+
 messaging.onBackgroundMessage((payload) => {
-  const { title, body } = payload.notification || payload.data || {};
+  // Message có field `notification` → FCM SDK/Chrome TỰ hiển thị rồi.
+  // Tự show thêm ở đây sẽ bị NHÂN ĐÔI thông báo — chỉ show cho data-only message.
+  if (payload.notification) return;
+  const { title, body } = payload.data || {};
   self.registration.showNotification(title || 'Thông báo SmartFarm', {
     body:  body || '',
     icon:  '/icon.png',

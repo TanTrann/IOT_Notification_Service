@@ -21,31 +21,33 @@ class NotificationService {
   }
 
 
-  async getByUser(deviceId, page = 1, limit = 20) {
+  // deviceIds: mảng thiết bị của user (từ JWT). Gộp thông báo của mọi thiết bị vào 1 inbox.
+  async getByUser(deviceIds, page = 1, limit = 20) {
+    const filter = { deviceId: { $in: deviceIds } };
     const [items, unreadCount] = await Promise.all([
-      Notification.find({ deviceId })
+      Notification.find(filter)
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit),
-      Notification.countDocuments({ deviceId, isRead: false }),
+      Notification.countDocuments({ ...filter, isRead: false }),
     ]);
     return { items, unreadCount };
   }
 
-  async markRead(id, deviceId) {
+  async markRead(id, deviceIds) {
     return Notification.findOneAndUpdate(
-      { _id: id, deviceId },
+      { _id: id, deviceId: { $in: deviceIds } },
       { isRead: true },
       { new: true }
     );
   }
 
-  async markAllRead(deviceId) {
-    return Notification.updateMany({ deviceId, isRead: false }, { isRead: true });
+  async markAllRead(deviceIds) {
+    return Notification.updateMany({ deviceId: { $in: deviceIds }, isRead: false }, { isRead: true });
   }
 
-  async getUnreadCount(deviceId) {
-    return Notification.countDocuments({ deviceId, isRead: false });
+  async getUnreadCount(deviceIds) {
+    return Notification.countDocuments({ deviceId: { $in: deviceIds }, isRead: false });
   }
 }
 

@@ -39,8 +39,8 @@ Thiết bị ──publish──► MQTT (xmini/sensor_data)
                           │ parse JSON
                           ▼
   evaluateSensorData(raw)
-          │  (so ngưỡng,
-          │   edge-detection)
+          │  (mỗi số đo →
+          │   1 thông báo)
           ▼
   [mảng 0..n thông báo]
           │ với mỗi thông báo
@@ -66,21 +66,22 @@ Thiết bị ──publish──► MQTT (xmini/sensor_data)
 }
 ```
 
-### Quy tắc ngưỡng (`evaluateSensorData`)
-| Chỉ số | Cảnh báo khi | type | severity |
-|---|---|---|---|
-| Độ ẩm đất | `< THRESHOLD_SOIL_MOISTURE_MIN` (30%) | `water` | warning / info (hồi phục) |
-| Nhiệt độ | `> THRESHOLD_TEMP_MAX` (35°C) | `temperature` | warning / info (hồi phục) |
-| Ánh sáng | `< THRESHOLD_LIGHT_MIN` (25 lux) | `light` | info |
+### Quy tắc sinh thông báo (`evaluateSensorData`)
+**Không còn ngưỡng cảnh báo.** Mỗi chỉ số có mặt trong bản tin đều sinh 1 thông báo báo số đo hiện tại:
 
-> Ngưỡng phải **cùng scale với rule phía server .NET** (MoistureRule mặc định min 30%, LightRule mặc định min 25 / max 60 lux) — nếu lệch, thông báo sẽ mâu thuẫn với hành động tưới/bật đèn của hệ thống.
+| Chỉ số | type | severity |
+|---|---|---|
+| `soil_moisture_percent` | `water` | warning |
+| `temperature_c` | `temperature` | warning |
+| `light_lux` | `light` | warning |
 
-**Edge-detection:** chỉ phát thông báo khi chỉ số **chuyển trạng thái** (tốt→xấu hoặc xấu→tốt). Trạng thái lưu theo key `${deviceId}:${metric}`. Nhờ vậy dù thiết bị gửi data liên tục mỗi vài giây, người dùng chỉ nhận thông báo tại thời điểm vượt ngưỡng / hồi phục, tránh spam.
+**Chống spam theo giá trị:** chỉ báo khi **giá trị của chỉ số thay đổi** so với lần trước (lưu theo key `${deviceId}:${metric}`). Nhờ vậy dù thiết bị gửi data liên tục mỗi vài giây, gửi lặp **cùng số đo** chỉ báo 1 lần.
 
-**Ví dụ:** độ ẩm đi từ 40% → 25% → 22% → 35%:
-- 40→25: vượt ngưỡng → báo "thiếu nước" (warning)
-- 25→22: vẫn xấu → **không báo**
-- 22→35: hồi phục → báo "độ ẩm đã ổn" (info)
+**Ví dụ:** độ ẩm đi từ 40% → 25% → 25% → 35%:
+- 40: giá trị mới → báo "Độ ẩm đất hiện tại 40%"
+- 25: đổi giá trị → báo "Độ ẩm đất hiện tại 25%"
+- 25: **cùng giá trị → không báo**
+- 35: đổi giá trị → báo "Độ ẩm đất hiện tại 35%"
 
 ---
 
@@ -166,7 +167,7 @@ Mọi thao tác lọc theo `deviceId` của JWT → người dùng chỉ thấy/
 | Cơ chế | Mục đích | Vị trí |
 |---|---|---|
 | `eventId` unique (lỗi 11000) | Cùng sự kiện đến 2 lần không gửi push lặp | `notificationService.notify()` |
-| Edge-detection theo trạng thái | Không spam khi cảm biến gửi liên tục | `eventTranslator.evaluateSensorData()` |
+| Bỏ qua khi số đo không đổi | Không spam khi cảm biến gửi liên tục | `eventTranslator.evaluateSensorData()` |
 | Tự xóa token chết | Giữ DB token sạch | `fcmService.sendToDevice()` |
 | Auto-reconnect MQTT 5s | Chịu lỗi mạng broker | `config/mqtt.js` |
 | Graceful degradation | Không crash khi thiếu cấu hình | `index.js` + các config |
@@ -177,8 +178,9 @@ Mọi thao tác lọc theo `deviceId` của JWT → người dùng chỉ thấy/
 
 Dùng `test-client` (xem [`../../test-client/README.md`](../../test-client/README.md)):
 
-1. Sinh JWT: `node generate-token.js device_test_01`
-2. Mở test-client → kết nối MQTT → init Firebase → lấy & lưu token
-3. Bấm các nút kịch bản giả lập ("🌵 Đất khô", "💦 WATER_ON"...) → quan sát push hiện lên
+1. Mở test-client → bước 2: nhập Device ID + `JWT_SECRET` (từ `.env`) → Sinh JWT → Copy
+   (hoặc CLI: `node generate-token.js device_test_01`)
+2. Mở notification-web → dán JWT → Lưu & Kết nối → Bật nhận push
+3. Quay lại test-client → kết nối MQTT → bấm các nút kịch bản giả lập ("🌵 Đất khô", "💦 WATER_ON"...) → push hiện lên ở notification-web
 
 Người dùng cuối xem thông báo qua [`../../notification-web/`](../../notification-web/README.md) (browser, port 3000) hoặc [`../../notification-app/`](../../notification-app/README.md) (app Android native).

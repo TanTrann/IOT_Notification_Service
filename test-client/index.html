@@ -37,8 +37,8 @@
              font-size: .75rem; font-weight: 600; margin-left: 8px; }
     .badge.green { background: #d4edda; color: #155724; }
     .badge.red   { background: #f8d7da; color: #721c24; }
-    #token-box { word-break: break-all; font-size: .78rem; color: #555;
-                 background: #f0f0f0; padding: 8px; border-radius: 6px; margin-top: 8px; }
+    #jwt-box { word-break: break-all; font-size: .78rem; color: #555;
+               background: #f0f0f0; padding: 8px; border-radius: 6px; margin-top: 8px; }
     .hint { font-size: .8rem; color: #888; margin-bottom: 10px; background: #fffbe6;
             border-left: 3px solid #f0ad4e; padding: 8px 10px; border-radius: 4px; }
     .step-num { display: inline-block; background: #2d7ff9; color: #fff;
@@ -53,8 +53,6 @@
   <!-- BƯỚC 1: Config chung -->
   <div class="card">
     <h2><span class="step-num">1</span>Cấu hình chung</h2>
-    <label>Notification Service URL</label>
-    <input id="cfg-serverUrl" value="http://localhost:3001" />
     <label>MQTT WebSocket URL (HiveMQ Cloud — WSS port 8884)</label>
     <input id="cfg-mqtt" value="wss://11a20bb1ae954c8d844aedfcb3be9322.s1.eu.hivemq.cloud:8884/mqtt" />
     <label>MQTT Username</label>
@@ -67,18 +65,20 @@
     <input id="cfg-topic-control" value="xmini/control" />
   </div>
 
-  <!-- BƯỚC 2: JWT -->
+  <!-- BƯỚC 2: Device ID + sinh JWT -->
   <div class="card">
-    <h2><span class="step-num">2</span>JWT Token</h2>
-    <div class="hint">
-      Chạy lệnh sau để sinh JWT:<br>
-      <code>cd notification-service && node generate-token.js device_test_01</code><br>
-      Paste kết quả vào ô bên dưới.
-    </div>
-    <label>JWT Token</label>
-    <input id="cfg-jwt" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." />
-    <label>Device ID (phải khớp với deviceId trong JWT)</label>
+    <h2><span class="step-num">2</span>Device ID & sinh JWT</h2>
+    <label>Device ID (gắn vào bản tin sensor)</label>
     <input id="cfg-deviceId" value="device_test_01" />
+    <label>JWT_SECRET (copy từ notification-service/.env)</label>
+    <input id="cfg-secret" type="password" placeholder="dán JWT_SECRET vào đây" />
+    <button onclick="genJwt()">🔑 Sinh JWT (hạn 30 ngày)</button>
+    <button class="secondary" onclick="copyJwt()">📋 Copy JWT</button>
+    <div id="jwt-box">JWT sẽ hiện ở đây...</div>
+    <div class="hint" style="margin-top:10px">
+      Copy JWT này dán vào <code>notification-web</code> (port 3000) để nhận thông báo của
+      device đang giả lập — test-client chỉ lo publish dữ liệu.
+    </div>
   </div>
 
   <!-- BƯỚC 3: MQTT -->
@@ -92,33 +92,13 @@
     <span id="mqtt-status" class="badge red">Chưa kết nối</span>
   </div>
 
-  <!-- BƯỚC 4: Firebase + FCM Token -->
+  <!-- BƯỚC 4: Giả lập ESP32 publish sensor -->
   <div class="card">
-    <h2><span class="step-num">4</span>Firebase — Lấy FCM Token</h2>
-    <label>apiKey</label>
-    <input id="cfg-apiKey" value="AIzaSyCUaUnwE20Gi9V35CX9CkcDmqwwxFYZiNI" />
-    <label>projectId</label>
-    <input id="cfg-projectId" value="smartfarmai-f1426" />
-    <label>messagingSenderId</label>
-    <input id="cfg-senderId" value="1071313553757" />
-    <label>appId</label>
-    <input id="cfg-appId" value="1:1071313553757:web:d9ad58188bcde720ca80b4" />
-    <label>VAPID Key</label>
-    <input id="cfg-vapid" value="BNOC91dgjosxTi-sHV8HaeTx3jKUAUwVAvyWY4tMc_zbMuoMmad0r1h3Rodl92k2bM_E6y4OmHiLP9jSsJ26G6Q" />
-    <button onclick="initFirebase()">Khởi tạo Firebase</button>
-    <span id="firebase-status" class="badge red">Chưa khởi tạo</span>
-    <br><br>
-    <button onclick="requestAndSaveToken()" class="secondary">Xin quyền → Lấy Token → Lưu vào DB</button>
-    <div id="token-box">Token sẽ hiện ở đây...</div>
-  </div>
-
-  <!-- BƯỚC 5: Giả lập ESP32 publish sensor -->
-  <div class="card">
-    <h2><span class="step-num">5</span>Giả lập ESP32 → <code>xmini/sensor_data</code></h2>
+    <h2><span class="step-num">4</span>Giả lập ESP32 → <code>xmini/sensor_data</code></h2>
     <div class="hint">
       Payload snake_case đúng format thiết bị xmini; <code>device_id</code> lấy từ bước 2.
-      Service chỉ báo khi <b>chuyển trạng thái</b> (edge-detection): bấm "Đất khô" 2 lần chỉ ra
-      1 thông báo — bấm "Đất ẩm lại" (báo hồi phục) rồi mới báo khô tiếp được.
+      Service tạo thông báo cho <b>mỗi số đo</b> (không còn ngưỡng); gửi lặp <b>cùng giá trị</b>
+      thì bỏ qua — đổi giá trị (vd bấm "Đất ẩm lại") mới báo tiếp.
       Nếu server điều khiển .NET đang chạy trên cùng broker, nó cũng nhận bản tin này và có thể
       tự phát lệnh thật xuống <code>xmini/control</code> → demo được trọn vòng.
     </div>
@@ -140,13 +120,13 @@
     <button onclick="publishFromTextarea('sensor-payload', getSensorTopic())">🚀 Publish payload này</button>
   </div>
 
-  <!-- BƯỚC 6: Giả lập server .NET publish control -->
+  <!-- BƯỚC 5: Giả lập server .NET publish control -->
   <div class="card">
-    <h2><span class="step-num">6</span>Giả lập server .NET → <code>xmini/control</code></h2>
+    <h2><span class="step-num">5</span>Giả lập server .NET → <code>xmini/control</code></h2>
     <div class="hint">
       Đúng format server điều khiển publish: <code>{ command, commandId, parameters }</code> —
       <b>không có device_id</b>. Service gán lệnh cho device của bản tin sensor <b>gần nhất</b>
-      (hoặc <code>DEFAULT_DEVICE_ID</code> trong .env), nên hãy publish 1 bản tin sensor ở bước 5 trước.
+      (hoặc <code>DEFAULT_DEVICE_ID</code> trong .env), nên hãy publish 1 bản tin sensor ở bước 4 trước.
       Mỗi lần bấm sinh <code>commandId</code> mới → thông báo mới; muốn test <b>chống trùng</b>
       thì bấm "Publish payload này" 2 lần (giữ nguyên commandId) — lần 2 service sẽ bỏ qua.
     </div>
@@ -171,13 +151,9 @@
   </div>
 </div>
 
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
 <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
 
 <script>
-let messaging  = null;
-let fcmToken   = null;
 let mqttClient = null;
 
 function log(msg, type = 'info') {
@@ -187,9 +163,39 @@ function log(msg, type = 'info') {
   el.scrollTop = el.scrollHeight;
 }
 function clearLog() { document.getElementById('log').innerHTML = ''; }
-function getServerUrl()    { return document.getElementById('cfg-serverUrl').value.replace(/\/$/, ''); }
-function getJwt()          { return document.getElementById('cfg-jwt').value.trim(); }
 function getDeviceId()     { return document.getElementById('cfg-deviceId').value.trim(); }
+
+// ── Sinh JWT ngay trên trang (HS256 bằng Web Crypto — thay cho generate-token.js) ──
+const b64url = buf => btoa(String.fromCharCode(...new Uint8Array(buf)))
+  .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const b64urlJson = obj => b64url(new TextEncoder().encode(JSON.stringify(obj)));
+
+async function genJwt() {
+  const secret   = document.getElementById('cfg-secret').value.trim();
+  const deviceId = getDeviceId();
+  if (!secret)   { log('❌ Dán JWT_SECRET (trong notification-service/.env) vào trước', 'err'); return; }
+  if (!deviceId) { log('❌ Nhập Device ID trước', 'err'); return; }
+
+  const now  = Math.floor(Date.now() / 1000);
+  const data = `${b64urlJson({ alg: 'HS256', typ: 'JWT' })}.${b64urlJson({ deviceId, iat: now, exp: now + 30 * 24 * 3600 })}`;
+  const key  = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const sig  = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(data));
+
+  document.getElementById('jwt-box').textContent = `${data}.${b64url(sig)}`;
+  localStorage.setItem('tc-secret', secret);   // đỡ phải dán lại lần sau
+  log(`🔑 Đã sinh JWT cho "${deviceId}" (hạn 30 ngày) — bấm Copy rồi dán vào notification-web`, 'ok');
+}
+
+function copyJwt() {
+  const t = document.getElementById('jwt-box').textContent;
+  if (!t || t.startsWith('JWT')) { log('❌ Sinh JWT trước đã', 'err'); return; }
+  navigator.clipboard.writeText(t).then(
+    () => log('📋 Đã copy JWT vào clipboard', 'ok'),
+    () => log('❌ Không copy được — chọn thủ công trong ô', 'err'),
+  );
+}
+if (localStorage.getItem('tc-secret')) document.getElementById('cfg-secret').value = localStorage.getItem('tc-secret');
 function getSensorTopic()  { return document.getElementById('cfg-topic-sensor').value.trim(); }
 function getControlTopic() { return document.getElementById('cfg-topic-control').value.trim(); }
 
@@ -266,63 +272,6 @@ function pubControl(command) {
   publishTo(getControlTopic(), payload);
 }
 
-// ── Firebase ──────────────────────────────────────────
-function initFirebase() {
-  const config = {
-    apiKey:            document.getElementById('cfg-apiKey').value,
-    projectId:         document.getElementById('cfg-projectId').value,
-    messagingSenderId: document.getElementById('cfg-senderId').value,
-    appId:             document.getElementById('cfg-appId').value,
-  };
-  try {
-    if (!firebase.apps.length) firebase.initializeApp(config);
-    messaging = firebase.messaging();
-    messaging.onMessage(payload => {
-      const n = payload.notification || payload.data || {};
-      log(`📬 Foreground notification: "${n.title}" — ${n.body}`, 'ok');
-    });
-    document.getElementById('firebase-status').textContent = 'Đã khởi tạo';
-    document.getElementById('firebase-status').className = 'badge green';
-    log('✅ Firebase khởi tạo thành công', 'ok');
-  } catch (e) {
-    log('❌ Firebase: ' + e.message, 'err');
-  }
-}
-
-async function requestAndSaveToken() {
-  if (!messaging) { log('❌ Khởi tạo Firebase trước (bước 4)', 'err'); return; }
-  const jwtToken = getJwt();
-  if (!jwtToken) { log('❌ Nhập JWT token trước (bước 2)', 'err'); return; }
-
-  try {
-    // 1. Xin quyền thông báo
-    const permission = await Notification.requestPermission();
-    if (permission !== 'granted') { log('❌ Người dùng từ chối quyền thông báo', 'err'); return; }
-    log('✅ Quyền thông báo được cấp', 'ok');
-
-    // 2. Lấy FCM token
-    const vapid = document.getElementById('cfg-vapid').value;
-    const swReg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
-    fcmToken = await messaging.getToken({ vapidKey: vapid, serviceWorkerRegistration: swReg });
-    document.getElementById('token-box').textContent = fcmToken;
-    log('✅ Lấy FCM token thành công: ' + fcmToken.substring(0, 40) + '...', 'ok');
-
-    // 3. Lưu token vào service (DB)
-    const res = await fetch(`${getServerUrl()}/api/v1/notifications/token`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${jwtToken}`,
-      },
-      body: JSON.stringify({ token: fcmToken, device: 'web' }),
-    });
-    const json = await res.json();
-    if (res.ok) log('✅ Token đã lưu vào DB — sẵn sàng nhận thông báo!', 'ok');
-    else        log('❌ Lưu token thất bại: ' + json.message, 'err');
-  } catch (e) {
-    log('❌ ' + e.message, 'err');
-  }
-}
 </script>
 </body>
 </html>

@@ -94,17 +94,28 @@
     <h2 style="cursor:pointer" onclick="toggleSetup()">⚙️ Kết nối <span id="setup-arrow">▾</span></h2>
     <div id="setup-body">
       <div class="hint">
-        Sinh JWT: <code>cd notification-service && node generate-token.js &lt;device_id&gt;</code><br>
-        <code>device_id</code> phải khớp thiết bị đang gửi dữ liệu (vd <code>device_test_01</code>) thì mới nhận được cảnh báo của thiết bị đó.
+        Đăng nhập bằng tài khoản demo (tạo bằng <code>node seed-users.js</code> ở service).
+        Mặc định: <code>demo</code> / <code>demo1234</code>. Thông báo hiển thị theo thiết bị gắn với tài khoản.
       </div>
       <label>Notification Service URL</label>
       <input id="cfg-server" value="http://localhost:3001" />
-      <label>JWT Token</label>
-      <textarea id="cfg-jwt" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."></textarea>
-      <div class="row">
-        <button onclick="saveAndConnect()">Lưu & Kết nối</button>
-        <button class="ghost" onclick="enablePush()">🔔 Bật nhận push</button>
-        <span class="chip" id="device-chip" hidden></span>
+      <div id="login-form">
+        <label>Tài khoản</label>
+        <input id="cfg-username" value="demo" autocomplete="username" />
+        <label>Mật khẩu</label>
+        <input id="cfg-password" type="password" value="demo1234" autocomplete="current-password"
+               onkeydown="if(event.key==='Enter')login()" />
+        <div class="row">
+          <button onclick="login()">Đăng nhập</button>
+          <span class="chip" id="device-chip" hidden></span>
+        </div>
+      </div>
+      <div id="session-box" hidden>
+        <div class="row">
+          <span class="chip on" id="user-chip"></span>
+          <button class="ghost" onclick="enablePush()">🔔 Bật nhận push</button>
+          <button class="ghost" onclick="logout()">Đăng xuất</button>
+        </div>
       </div>
     </div>
   </div>
@@ -138,18 +149,19 @@ const TYPE_ICON = { water: '💧', light: '💡', temperature: '🌡️', nutrit
 
 // ── State ───────────────────────────────────────────────────────────────────
 let page = 1, totalLoaded = 0, messaging = null;
+let authToken = '';                       // JWT nhận sau khi đăng nhập (không lộ secret ở client)
 const cfg = JSON.parse(localStorage.getItem('notiweb-config') || '{}');
 
 function $(id) { return document.getElementById(id); }
 function serverUrl() { return ($('cfg-server').value || 'http://localhost:3001').replace(/\/$/, ''); }
-// Bỏ MỌI khoảng trắng/xuống dòng — copy JWT từ terminal hay dính wrap dòng giữa chuỗi
-function jwt() { return $('cfg-jwt').value.replace(/\s+/g, ''); }
+function jwt() { return authToken; }
 function api(path, opts = {}) {
   return fetch(`${serverUrl()}/api/v1/notifications${path}`, {
     ...opts,
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${jwt()}`, ...(opts.headers || {}) },
   }).then(async r => {
     const json = await r.json().catch(() => ({}));
+    if (r.status === 401) { resetSession(); throw new Error(json.message || 'Phiên hết hạn — đăng nhập lại'); }
     if (!r.ok) throw new Error(json.message || `HTTP ${r.status}`);
     return json;
   });
@@ -165,23 +177,61 @@ function toggleSetup() {
   $('setup-arrow').textContent = $('setup-body').classList.contains('collapsed-body') ? '▸' : '▾';
 }
 
-async function saveAndConnect() {
-  if (!jwt()) return toast('Thiếu JWT', 'Dán JWT token vào ô cấu hình trước.');
-  const claims = parseJwt(jwt());
-  if (!claims) return toast('JWT không đúng định dạng', 'Kiểm tra lại token — copy đủ, không thiếu ký tự.');
-  if (claims.exp && claims.exp * 1000 < Date.now()) {
-    return toast('JWT đã hết hạn', 'Sinh token mới: node generate-token.js <device_id>');
+async function login() {
+  const username = $('cfg-username').value.trim();
+  const password = $('cfg-password').value;
+  if (!username || !password) return toast('Thiếu thông tin', 'Nhập tài khoản và mật khẩu.');
+  try {
+    const r = await fetch(`${serverUrl()}/api/v1/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    const json = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(json.message || `HTTP ${r.status}`);
+    authToken = json.token;
+    localStorage.setItem('notiweb-config', JSON.stringify({ server: serverUrl(), token: authToken, username }));
+    onLoggedIn(json.user);
+    await refresh();
+    // Đã cấp quyền từ trước thì tự bật lại push (token FCM có thể đổi theo browser profile)
+    if (Notification.permission === 'granted') enablePush(true);
+  } catch (e) {
+    toast('Đăng nhập lỗi', e.message);
   }
-  $('cfg-jwt').value = jwt();   // ghi lại bản đã làm sạch khoảng trắng
-  localStorage.setItem('notiweb-config', JSON.stringify({ server: serverUrl(), jwt: jwt() }));
-  if (claims.deviceId) {
-    $('device-chip').textContent = `📟 ${claims.deviceId}`;
-    $('device-chip').hidden = false;
-  }
-  await refresh();
+}
+
+// Hiển thị trạng thái đã đăng nhập. user có thể không có (khi khôi phục từ localStorage) → suy từ token.
+function onLoggedIn(user) {
+  const claims = parseJwt(authToken) || {};
+  const ids = user?.deviceIds || claims.deviceIds || (claims.deviceId ? [claims.deviceId] : []);
+  $('user-chip').textContent = `👤 ${user?.username || cfg.username || ''} · ${ids.join(', ') || '(chưa gắn thiết bị)'}`;
+  $('login-form').hidden = true;
+  $('session-box').hidden = false;
   toggleSetupCollapsed(true);
-  // Đã cấp quyền từ trước thì tự bật lại push (token có thể đổi theo browser profile)
-  if (Notification.permission === 'granted') enablePush(true);
+}
+
+async function logout() {
+  // Hủy đăng ký FCM token của máy này để service ngừng push về đây
+  try {
+    if (messaging) {
+      const t = await messaging.getToken({ vapidKey: VAPID_KEY }).catch(() => null);
+      if (t) await api('/token', { method: 'DELETE', body: JSON.stringify({ token: t }) }).catch(() => {});
+    }
+  } catch {}
+  resetSession();
+}
+
+// Xóa phiên + đưa UI về màn đăng nhập (dùng cả khi token hết hạn 401)
+function resetSession() {
+  authToken = '';
+  localStorage.removeItem('notiweb-config');
+  $('login-form').hidden = false;
+  $('session-box').hidden = true;
+  $('feed').innerHTML = '<div class="empty">Đăng nhập để xem thông báo.</div>';
+  setUnread(0);
+  $('fcm-chip').textContent = 'Chưa bật push';
+  $('fcm-chip').className = 'chip';
+  toggleSetupCollapsed(false);
 }
 
 function toggleSetupCollapsed(collapsed) {
@@ -191,7 +241,7 @@ function toggleSetupCollapsed(collapsed) {
 
 // ── Push (FCM) ──────────────────────────────────────────────────────────────
 async function enablePush(silent = false) {
-  if (!jwt()) return toast('Thiếu JWT', 'Dán JWT rồi bấm "Lưu & Kết nối" trước.');
+  if (!jwt()) return toast('Chưa đăng nhập', 'Đăng nhập trước khi bật nhận push.');
   try {
     const permission = await Notification.requestPermission();
     if (permission !== 'granted') return toast('Bị từ chối', 'Browser không cho phép hiện thông báo.');
@@ -314,9 +364,20 @@ function toast(title, body) {
 }
 
 // ── Boot ────────────────────────────────────────────────────────────────────
-if (cfg.server) $('cfg-server').value = cfg.server;
-if (cfg.jwt)    $('cfg-jwt').value = cfg.jwt;
-if (cfg.jwt) saveAndConnect();
+if (cfg.server)   $('cfg-server').value = cfg.server;
+if (cfg.username) $('cfg-username').value = cfg.username;
+// Khôi phục phiên nếu token còn hạn
+if (cfg.token) {
+  const claims = parseJwt(cfg.token);
+  if (claims && (!claims.exp || claims.exp * 1000 > Date.now())) {
+    authToken = cfg.token;
+    onLoggedIn();
+    refresh();
+    if (Notification.permission === 'granted') enablePush(true);
+  } else {
+    localStorage.removeItem('notiweb-config');
+  }
+}
 
 // Quay lại tab → cập nhật (push background chỉ hiện system-notification, không chạy JS trong tab)
 window.addEventListener('focus', () => { if (jwt()) refresh(); });
