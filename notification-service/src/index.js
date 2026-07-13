@@ -8,6 +8,7 @@ import compression from 'compression';
 import morgan from 'morgan';
 import notificationRoutes from './routes/notificationRoutes.js';
 import authRoutes from './routes/authRoutes.js';
+import internalRoutes from './routes/internalRoutes.js';
 import { connectDB } from './config/database.js';
 
 const app = express();
@@ -26,12 +27,16 @@ app.use(cors({
     return cb(new Error(`Origin ${origin} not allowed by CORS`));
   },
 }));
-app.use(compression());
+// SSE cần đẩy từng chunk ngay — compression sẽ buffer nên phải bỏ qua stream màn hình rời
+app.use(compression({
+  filter: (req, res) => (req.path === '/internal/display/stream' ? false : compression.filter(req, res)),
+}));
 app.use(express.json());
 app.use(morgan(isProd ? 'combined' : 'dev'));
 
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/notifications', notificationRoutes);
+app.use('/internal', internalRoutes);   // MCP server (Phong) đẩy vào + màn hình rời — auth API key
 
 app.get('/health', (_req, res) => res.json({ status: 'ok', message: 'Notification Service is running' }));
 
