@@ -1,7 +1,7 @@
 import Notification from '../models/Notification.js';
 
-// Truy vấn lịch sử thông báo cho REST /api/v1/notifications (web dùng). Việc gửi push FCM
-// nay do mqttHandler → fcmService.sendToAll đảm nhiệm theo mô hình "1 topic notification".
+// Truy vấn lịch sử thông báo cho REST /api/v1/notifications (web dùng), lọc theo deviceId.
+// Việc gửi push FCM nay do mqttHandler → fcmService.sendToDeviceId đảm nhiệm (targeting theo thiết bị).
 class NotificationService {
   async getByUser(deviceId, page = 1, limit = 20) {
     const [items, unreadCount] = await Promise.all([

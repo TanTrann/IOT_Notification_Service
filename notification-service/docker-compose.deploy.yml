@@ -15,7 +15,7 @@ services:
     pull_policy: always
     ports:
       - "3001:3001" # host 3001 -> container 3001
-    # Nạp secret từ .env cùng thư mục: JWT_SECRET, INTERNAL_API_KEY, MQTT_*, (Firebase nếu dùng cách B)
+    # Nạp secret từ .env cùng thư mục: INTERNAL_API_KEY, MQTT_*, (Firebase nếu dùng cách B)
     env_file:
       - .env
     environment:

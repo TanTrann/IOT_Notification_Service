@@ -5,21 +5,17 @@ import {
   getUnreadCount,
   markAllRead,
   markRead,
-  removeToken,
-  saveToken,
 } from '../controllers/notificationController.js';
-import { auth } from '../middlewares/auth.js';
+import { internalAuth } from '../middlewares/internalAuth.js';
 
 const router = Router();
 
-// Frontend gọi để đăng ký / xóa FCM token (cần auth)
-router.post('/token',       auth, saveToken);
-router.delete('/token',     auth, removeToken);
-
-// Lịch sử và trạng thái thông báo của user
-router.get('/',             auth, getNotifications);
-router.get('/unread-count', auth, getUnreadCount);
-router.patch('/:id/read',   auth, markRead);
-router.patch('/read-all',   auth, markAllRead);
+// Đọc lịch sử + trạng thái thông báo cho màn hình kiosk. Lọc theo ?deviceId=...
+// Không còn user/JWT — bảo vệ bằng API key (x-api-key) giống các endpoint nội bộ khác.
+// Đăng ký/hủy FCM token nay dùng /internal/push/token.
+router.get('/',             internalAuth, getNotifications);
+router.get('/unread-count', internalAuth, getUnreadCount);
+router.patch('/:id/read',   internalAuth, markRead);
+router.patch('/read-all',   internalAuth, markAllRead);
 
 export default router;

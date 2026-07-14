@@ -1,7 +1,8 @@
 # Luồng hoạt động
 
 Tài liệu mô tả các luồng chạy thực tế theo **mô hình hiện tại** (nghe
-`planttree/{deviceId}/notifications`, không dịch, **broadcast push qua Firebase**; đã bỏ SSE).
+`planttree/{deviceId}/notifications`, không dịch, **push qua Firebase theo `deviceId`** — mỗi màn
+hình chỉ nhận tin của cây mình; đã bỏ SSE và bỏ luôn lớp user/đăng nhập/JWT).
 
 1. [Khởi động service](#1-luồng-khởi-động)
 2. [Thông báo từ MCP → push Firebase](#2-luồng-thông-báo)
@@ -18,7 +19,7 @@ npm start → src/index.js
    3. startMQTTListener() → kết nối broker, subscribe planttree/+/notifications
    4. database.js     → kết nối MongoDB (lưu FCM token)
    5. Express         → middleware (helmet, cors, compression, morgan)
-                      → mount /internal, /api/v1/auth, /api/v1/notifications
+                      → mount /internal, /api/v1/notifications  (đều dùng x-api-key)
                       → GET /health
    6. listen PORT (mặc định 3001)
 ```
@@ -30,7 +31,7 @@ npm start → src/index.js
 ## 2. Luồng thông báo
 
 **Kích hoạt:** MCP/server của Phong publish một JSON bất kỳ lên `planttree/{deviceId}/notifications`.
-Service **không dịch/biến đổi** — broadcast push qua Firebase tới mọi client đã đăng ký.
+Service **không dịch/biến đổi** — push qua Firebase tới **đúng** các màn hình đã đăng ký `deviceId` đó.
 
 ```
 MCP ──publish JSON──► MQTT (planttree/{deviceId}/notifications)
@@ -38,12 +39,13 @@ MCP ──publish JSON──► MQTT (planttree/{deviceId}/notifications)
                           ▼
                   mqttHandler nhận message
                           │ parse JSON (không đổi payload)
-                          │ bóc deviceId từ topic
+                          │ bóc deviceId từ topic (không có → bỏ qua)
+                          │ ghi lịch sử vào MongoDB (best-effort)
                           ▼
-                  fcmService.sendToAll({ title, body, data })
-                          │  tìm MỌI token trong fcmtokens
+                  fcmService.sendToDeviceId(deviceId, { title, body, data })
+                          │  tìm các token có ĐÚNG deviceId trong fcmtokens
                           ▼
-                  messaging.send() song song ──► Firebase ──► client
+                  messaging.send() song song ──► Firebase ──► màn hình của cây đó
                           (token chết tự bị xóa)
 ```
 
@@ -72,18 +74,18 @@ Web kiosk
    1. xin quyền notification (browser)
    2. getToken({ vapidKey }) → registration token
    3. đăng ký token về service:
-        - qua REST:     POST /api/v1/notifications/token  (JWT)      deviceId từ JWT
-        - hoặc nội bộ:  POST /internal/push/token         (API key)  deviceId = 'broadcast'
+        POST /internal/push/token  (header x-api-key)
+        body { token, deviceId, device: 'web' }   ← deviceId của cây màn hình đứng cạnh
               │
               ▼
-   Server lưu vào collection fcmtokens
+   Server lưu vào collection fcmtokens (token gắn với đúng deviceId)
 ```
 
 ### 3.2. Nhận & hiển thị
 ```
-fcmService.sendToAll ──► Firebase ──► web kiosk
+fcmService.sendToDeviceId ──► Firebase ──► web kiosk (đúng deviceId)
    - Tab đang mở (foreground): messaging.onMessage(payload)
-        → dựng 1 mục thông báo từ payload → prependLive() thêm vào ĐẦU danh sách trong trang
+        → dựng 1 mục thông báo từ payload → thêm vào ĐẦU danh sách trong trang (unshift)
    - Tab đóng/nền: service worker firebase-messaging-sw.js hiển thị notification hệ thống
 ```
 
@@ -98,7 +100,7 @@ fcmService.sendToAll ──► Firebase ──► web kiosk
 | Cơ chế | Mục đích | Vị trí |
 |---|---|---|
 | Không dịch/biến đổi payload | Hiển thị đúng nguyên tin MCP gửi | `mqttHandler` |
-| FCM best-effort (không chặn) | Lỗi push không làm gãy luồng | `mqttHandler.broadcastPush()` |
+| FCM best-effort (không chặn) | Lỗi push không làm gãy luồng | `mqttHandler.pushToDevice()` |
 | Tự xóa token chết | Giữ DB token sạch | `fcmService.sendToDevice()` |
 | Auto-reconnect MQTT 5s | Chịu lỗi mạng broker | `config/mqtt.js` |
 | Graceful degradation | Không crash khi thiếu cấu hình | `index.js` + các config |
@@ -109,7 +111,8 @@ fcmService.sendToAll ──► Firebase ──► web kiosk
 
 1. Chạy service: `cd notification-service && npm run dev` (cần Firebase credentials trong `.env`).
 2. Mở màn hình kiosk: `npx serve notification-web -l 3000` → mở `http://localhost:3000` full-screen →
-   đăng nhập demo → **Bật nhận push** (cấp quyền browser).
+   bấm ⚙️ nhập **Server URL + Device ID + API key** (bằng `INTERNAL_API_KEY`) → Lưu →
+   **Bật nhận push** (cấp quyền browser). Token được đăng ký kèm đúng Device ID vừa nhập.
 3. Bắn thử một thông báo:
    `node scripts/publish-test.js` (mặc định deviceId `ESP32S3_Zone1`; truyền deviceId khác ở tham số 2)
-   → tin hiện ngay trên màn hình (Firebase Web Push, `onMessage`).
+   → tin hiện ngay trên màn hình có **cùng Device ID** (Firebase Web Push, `onMessage`).

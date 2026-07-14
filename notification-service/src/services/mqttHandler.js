@@ -8,7 +8,7 @@ import Notification from '../models/Notification.js';
 //   planttree/{deviceId}/notifications  (thông báo — Phong publish, SERVICE NÀY nghe) ◄──
 //
 // deviceId nằm TRONG topic. Service KHÔNG dịch/biến đổi payload — mỗi tin nhận được sẽ
-// broadcast qua Firebase (FCM) tới mọi thiết bị đã đăng ký (web/app), nổ cả khi tab/app đóng.
+// đẩy qua Firebase (FCM) tới đúng các màn hình đã đăng ký deviceId đó, nổ cả khi tab/app đóng.
 const DEFAULT_TOPIC = 'planttree/+/notifications';
 
 export function startMQTTListener() {
@@ -40,9 +40,14 @@ export function startMQTTListener() {
     const parts = topic.split('/');
     const deviceId = parts.length >= 3 ? parts[1] : null;
 
-    broadcastPush(data, deviceId)
-      .then(() => console.log(`MQTT "${topic}" → FCM broadcast`))
-      .catch(err => console.error('FCM broadcast lỗi:', err.message));
+    if (!deviceId) {
+      console.warn(`MQTT "${topic}" → bỏ qua: không bóc được deviceId từ topic`);
+      return;
+    }
+
+    pushToDevice(data, deviceId)
+      .then(() => console.log(`MQTT "${topic}" → FCM push tới deviceId="${deviceId}"`))
+      .catch(err => console.error('FCM push lỗi:', err.message));
   });
 }
 
@@ -63,7 +68,7 @@ function normType(raw) {
   return TYPE_ENUM.includes(t) ? t : undefined;   // ngoài enum → bỏ (field type không bắt buộc)
 }
 
-async function broadcastPush(payload, deviceId) {
+async function pushToDevice(payload, deviceId) {
   const title = pick(payload, ['title', 'tieu_de', 'name', 'event']) ?? 'Thông báo SmartFarm';
   const body  = pick(payload, ['body', 'message', 'msg', 'content', 'noi_dung', 'description']) ?? '';
   const type     = pick(payload, ['type', 'category', 'loai']);
@@ -73,13 +78,12 @@ async function broadcastPush(payload, deviceId) {
   saveHistory({ payload, deviceId, title, body, type, severity })
     .catch(err => console.error('Lưu lịch sử lỗi:', err.message));
 
-  // Hiện broadcast tới TẤT CẢ token (mô hình demo). Để push đúng theo deviceId (targeting),
-  // cho client đăng ký token kèm deviceId thật rồi đổi sang fcmService.sendToUser(deviceId, ...).
-  await fcmService.sendToAll({
+  // Push tới đúng các màn hình đã đăng ký deviceId này (targeting theo thiết bị).
+  await fcmService.sendToDeviceId(deviceId, {
     title: String(title),
     body:  String(body),
     // FCM ép mọi field data về string; gửi kèm deviceId + payload gốc để client dùng nếu cần
-    data: { deviceId: deviceId ?? '', type: type ?? '', severity: severity ?? '', raw: JSON.stringify(payload) },
+    data: { deviceId, type: type ?? '', severity: severity ?? '', raw: JSON.stringify(payload) },
   });
 }
 

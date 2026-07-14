@@ -31,10 +31,12 @@ class FCMService {
     }
   }
 
-  // Gửi tới TẤT CẢ token đã đăng ký (mô hình "1 topic notification" — ai cũng nhận).
-  async sendToAll(notification) {
+  // Gửi tới mọi token đã đăng ký ĐÚNG deviceId này (targeting theo thiết bị).
+  // Mỗi màn hình kiosk đăng ký token kèm deviceId của cây nó đứng cạnh → chỉ nhận tin của cây đó.
+  async sendToDeviceId(deviceId, notification) {
     this._check();
-    const tokens = await FCMToken.find().select('token');
+    if (!deviceId) return [];
+    const tokens = await FCMToken.find({ deviceId }).select('token');
     if (!tokens.length) return [];
     return Promise.allSettled(tokens.map(t => this.sendToDevice(t.token, notification)));
   }

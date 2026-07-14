@@ -6,14 +6,15 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 
 const router = Router();
 
-// Client (web kiosk / app) đăng ký FCM token để nhận push. Mô hình "broadcast cho tất cả",
-// nên KHÔNG cần deviceId/JWT; xác thực bằng API key giống các endpoint /internal khác.
+// Client (web kiosk / app) đăng ký FCM token để nhận push của ĐÚNG thiết bị nó đứng cạnh.
+// deviceId là danh tính cấu hình trên chính màn hình (không gắn user); xác thực bằng API key.
 router.post('/push/token', internalAuth, asyncHandler(async (req, res) => {
-  const { token, device = 'web' } = req.body || {};
+  const { token, deviceId, device = 'web' } = req.body || {};
   if (!token) return res.status(400).json({ success: false, message: 'Missing token' });
+  if (!deviceId) return res.status(400).json({ success: false, message: 'Missing deviceId' });
   await FCMToken.findOneAndUpdate(
     { token },
-    { deviceId: 'broadcast', token, device },
+    { deviceId: String(deviceId), token, device },
     { upsert: true, new: true }
   );
   res.json({ success: true });

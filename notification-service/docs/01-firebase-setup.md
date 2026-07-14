@@ -19,15 +19,18 @@ Tài liệu này hướng dẫn thiết lập **Firebase Cloud Messaging (FCM)**
    │  Client (Web SDK)     │ ◄── đăng ký ────── │  Trình duyệt / App    │
    │  + VAPID key          │                    │  (Service Worker)     │
    └──────────┬───────────┘                    └──────────────────────┘
-              │ POST /api/v1/notifications/token (lưu token vào MongoDB)
+              │ POST /internal/push/token  { token, deviceId, device }
+              │ (x-api-key — lưu token + deviceId vào MongoDB)
               ▼
         Notification Service
 ```
 
 - **Server** cần **Service Account** (private key) để xác thực với Firebase và gửi message.
-- **Client** cần **Web config + VAPID key** để đăng ký nhận push, rồi gửi token về server lưu vào DB.
-- Theo mô hình hiện tại, server **broadcast** tới **mọi** token đã đăng ký
-  (`fcmService.sendToAll`) mỗi khi có tin trên `planttree/{deviceId}/notifications`.
+- **Client** cần **Web config + VAPID key** để đăng ký nhận push, rồi gửi token **kèm `deviceId`**
+  về server lưu vào DB (qua `POST /internal/push/token`, header `x-api-key`).
+- Theo mô hình hiện tại, server gửi tới **đúng** các token đã đăng ký **cùng `deviceId`**
+  (`fcmService.sendToDeviceId`) mỗi khi có tin trên `planttree/{deviceId}/notifications` —
+  targeting theo thiết bị, mỗi màn hình chỉ nhận tin của cây mình.
 
 ---
 
@@ -165,7 +168,7 @@ Tham khảo [`src/services/fcmService.js`](../src/services/fcmService.js). Mỗi
 Lưu ý:
 - **FCM bắt buộc mọi giá trị trong `data` là chuỗi** → code tự `String(v)` toàn bộ.
 - Nếu token không còn hợp lệ (`messaging/registration-token-not-registered`), service **tự xóa** token đó khỏi MongoDB.
-- `sendToAll()` tìm **tất cả** token trong `fcmtokens` và gửi song song (mô hình "1 topic — ai đăng ký cũng nhận"). Vẫn còn `sendToDevice(token, …)` để gửi tới 1 token cụ thể.
+- `sendToDeviceId(deviceId, …)` tìm **các token có đúng `deviceId`** trong `fcmtokens` và gửi song song (targeting theo thiết bị — mỗi màn hình chỉ nhận tin của cây mình). `sendToDevice(token, …)` gửi tới 1 token cụ thể (được `sendToDeviceId` gọi bên trong).
 
 ---
 
@@ -182,7 +185,7 @@ Lưu ý:
 - [ ] Đã điền **VAPID key**
 - [ ] Chạy qua `http://localhost` (không mở file trực tiếp)
 - [ ] Đã cho phép quyền thông báo trên trình duyệt
-- [ ] Token đã được lưu vào DB qua `POST /api/v1/notifications/token`
+- [ ] Token đã được lưu vào DB qua `POST /internal/push/token` (kèm `deviceId` + header `x-api-key`)
 
 ---
 

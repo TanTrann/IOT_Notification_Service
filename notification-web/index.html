@@ -72,15 +72,14 @@
     .noti .meta { font-size: .72rem; color: #98a6a0; margin-top: 5px; }
     .empty { text-align: center; color: var(--muted); padding: 34px 12px; font-size: .88rem; line-height: 1.5; }
 
-    /* ── Form đăng nhập / phiên (trong user dropdown) ── */
+    /* ── Form cấu hình (trong dropdown ⚙️) ── */
     .dd-body { padding: 14px; }
     .dd-body label { display: block; font-size: .78rem; color: var(--muted); margin: 8px 0 4px; }
     .dd-body input {
       width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: 8px;
       font-size: .86rem; background: #fafcfb; color: var(--text);
     }
-    .session-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-    .user-tag { font-size: .85rem; font-weight: 600; color: var(--brand-dark); background: #d7f0e0; padding: 6px 10px; border-radius: 8px; }
+    .user-tag { font-size: .85rem; font-weight: 600; color: var(--brand-dark); background: #d7f0e0; padding: 6px 10px; border-radius: 8px; display: inline-block; }
     .fcm-state { font-size: .76rem; color: var(--muted); margin-top: 10px; }
     .fcm-state.on { color: var(--brand-dark); font-weight: 600; }
 
@@ -127,8 +126,8 @@
     <button class="icon-btn" id="bell-btn" title="Thông báo">
       🔔<span class="badge-count" id="unread-badge" hidden>0</span>
     </button>
-    <button class="icon-btn" id="user-btn" title="Tài khoản">
-      👤<span class="u-label" id="user-label">Đăng nhập</span>
+    <button class="icon-btn" id="user-btn" title="Cấu hình">
+      ⚙️<span class="u-label" id="user-label">Cấu hình</span>
     </button>
   </header>
 
@@ -141,9 +140,9 @@
     <div class="dd-list" id="dropdown-list"></div>
   </div>
 
-  <!-- Dropdown: tài khoản (form đăng nhập / phiên) -->
+  <!-- Dropdown: cấu hình màn hình kiosk (server + deviceId + API key) -->
   <div class="dropdown" id="user-dropdown" hidden>
-    <div class="dd-body" id="user-body"><!-- render theo trạng thái đăng nhập --></div>
+    <div class="dd-body" id="user-body"><!-- render form cấu hình --></div>
   </div>
 
   <!-- Giữa trang: thông báo gần đây nhất + 2 tin nhỏ bên dưới -->
@@ -182,27 +181,29 @@ const TYPE_ICON = { water: '💧', light: '💡', temperature: '🌡️', temp: 
 const SEV_COLOR = { info: '#2d7ff9', warning: '#e8930c', critical: '#e0442e' };
 const SEV_LABEL = { critical: 'Nguy cấp', warning: 'Cảnh báo', info: 'Thông tin' };
 
+// Cấu hình kiosk: { server, deviceId, apiKey }. deviceId = cây/thiết bị màn hình này đứng cạnh.
+// Không còn user/đăng nhập — màn hình chỉ nhận & hiển thị thông báo của đúng deviceId đã cấu hình.
 let messaging = null;
-let authToken = '';
 const cfg = JSON.parse(localStorage.getItem('notiweb-config') || '{}');
 
 function $(id) { return document.getElementById(id); }
 function serverUrl() { return (cfg.server || 'http://localhost:3001').replace(/\/$/, ''); }
-function jwt() { return authToken; }
+function ready() { return !!(cfg.server && cfg.deviceId && cfg.apiKey); }
+
+// REST đọc lịch sử — auth bằng API key (x-api-key), tự gắn ?deviceId của kiosk.
 function api(path, opts = {}) {
-  return fetch(`${serverUrl()}/api/v1/notifications${path}`, {
+  const sep = path.includes('?') ? '&' : '?';
+  const url = `${serverUrl()}/api/v1/notifications${path}${sep}deviceId=${encodeURIComponent(cfg.deviceId || '')}`;
+  return fetch(url, {
     ...opts,
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${jwt()}`, ...(opts.headers || {}) },
+    headers: { 'Content-Type': 'application/json', 'x-api-key': cfg.apiKey || '', ...(opts.headers || {}) },
   }).then(async r => {
     const json = await r.json().catch(() => ({}));
-    if (r.status === 401) { resetSession(); throw new Error(json.message || 'Phiên hết hạn'); }
     if (!r.ok) throw new Error(json.message || `HTTP ${r.status}`);
     return json;
   });
 }
-function parseJwt(t) {
-  try { return JSON.parse(atob(t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); } catch { return null; }
-}
+
 function esc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
 function normSev(raw) {
   const s = String(raw ?? '').toLowerCase();
@@ -232,7 +233,7 @@ function closeDropdowns(except) {
   if (except !== 'user') $('user-dropdown').hidden = true;
 }
 $('bell-btn').onclick = (e) => { e.stopPropagation(); const d = $('bell-dropdown'); const show = d.hidden; closeDropdowns('bell'); d.hidden = !show; };
-$('user-btn').onclick = (e) => { e.stopPropagation(); const d = $('user-dropdown'); const show = d.hidden; closeDropdowns('user'); d.hidden = !show; renderUserDropdown(); };
+$('user-btn').onclick = (e) => { e.stopPropagation(); const d = $('user-dropdown'); const show = d.hidden; closeDropdowns('user'); d.hidden = !show; renderSettings(); };
 document.addEventListener('click', (e) => {
   if (!e.target.closest('.dropdown') && !e.target.closest('.icon-btn')) closeDropdowns();
 });
@@ -277,15 +278,15 @@ function markReadLive(mid) {
   const n = liveItems.find(x => x._mid === mid);
   if (n && !n.isRead) {
     n.isRead = true; persist(); renderAll();
-    if (n._id) api(`/${n._id}/read`, { method: 'PATCH' }).catch(() => {});   // đồng bộ server
+    if (n._id && ready()) api(`/${n._id}/read`, { method: 'PATCH' }).catch(() => {});   // đồng bộ server
   }
 }
 function markAllReadLive() {
   liveItems.forEach(n => n.isRead = true); persist(); renderAll();
-  if (jwt()) api('/read-all', { method: 'PATCH' }).catch(() => {});           // đồng bộ server
+  if (ready()) api('/read-all', { method: 'PATCH' }).catch(() => {});                    // đồng bộ server
 }
 
-// ── Lịch sử bền vững từ REST (GET /api/v1/notifications) ────────────────────────
+// ── Lịch sử bền vững từ REST (GET /api/v1/notifications?deviceId=...) ────────────
 // Chữ ký nội dung + phút để chống trùng giữa item realtime (FCM) và item từ DB
 // (cùng 1 tin có _mid khác _id nên không dedup được theo id).
 function sigOf(n) {
@@ -307,7 +308,7 @@ function itemFromServer(d) {
   };
 }
 async function loadHistory() {
-  if (!jwt()) return renderAll();
+  if (!ready()) return renderAll();
   try {
     const res = await api('?limit=50');
     const seen = new Set(liveItems.map(sigOf));
@@ -325,29 +326,28 @@ async function loadHistory() {
     liveItems = liveItems.slice(0, 100);
     persist(); renderAll();
   } catch (e) {
-    // 401 → api() đã tự resetSession; lỗi khác thì giữ nguyên danh sách realtime
-    console.warn('loadHistory:', e.message);
+    console.warn('loadHistory:', e.message);   // sai API key / server lỗi → giữ nguyên danh sách realtime
   }
 }
 
 // ── Render ────────────────────────────────────────────────────────────────────
 function renderAll(isNew) {
-  const authed = !!jwt();
-  renderHero(isNew, authed);
-  renderRecent(authed);
-  renderDropdownList(authed);
-  const c = authed ? unreadCount() : 0;
+  const rdy = ready();
+  renderHero(isNew, rdy);
+  renderRecent(rdy);
+  renderDropdownList(rdy);
+  const c = rdy ? unreadCount() : 0;
   $('unread-badge').hidden = c === 0;
   $('unread-badge').textContent = c > 99 ? '99+' : c;
 }
 
-function renderHero(isNew, authed) {
+function renderHero(isNew, rdy) {
   const hero = $('hero');
-  if (!authed) {
+  if (!rdy) {
     hero.className = 'empty-hero';
     hero.innerHTML = `<div class="head" style="justify-content:center"><div>
-      <div class="h-title">Chưa đăng nhập</div>
-      <div class="h-body">Đăng nhập (👤 góc phải) để xem thông báo.</div></div></div>`;
+      <div class="h-title">Chưa cấu hình</div>
+      <div class="h-body">Bấm ⚙️ (góc phải) để nhập Server, Device ID và API key.</div></div></div>`;
     return;
   }
   const n = liveItems[0];
@@ -390,10 +390,10 @@ function notiEl(n) {
   return el;
 }
 
-function renderDropdownList(authed) {
+function renderDropdownList(rdy) {
   const list = $('dropdown-list');
-  if (!authed) {
-    list.innerHTML = '<div class="empty">Đăng nhập để xem thông báo.</div>';
+  if (!rdy) {
+    list.innerHTML = '<div class="empty">Chưa cấu hình.<br>Bấm ⚙️ để nhập Server, Device ID và API key.</div>';
     return;
   }
   if (!liveItems.length) {
@@ -405,92 +405,57 @@ function renderDropdownList(authed) {
 }
 
 // 2 tin nhỏ ngay bên dưới hero (tin gần đây thứ 2 và 3)
-function renderRecent(authed) {
+function renderRecent(rdy) {
   const box = $('recent-mini');
   box.innerHTML = '';
-  if (!authed) return;
+  if (!rdy) return;
   liveItems.slice(1, 3).forEach(n => box.appendChild(notiEl(n)));
 }
 
-// ── Tài khoản: form đăng nhập / phiên ─────────────────────────────────────────
-function renderUserDropdown() {
+// ── Cấu hình kiosk: form Server / Device ID / API key ─────────────────────────
+function renderSettings() {
   const body = $('user-body');
-  if (jwt()) {
-    const claims = parseJwt(authToken) || {};
-    const deviceId = claims.deviceId || '';
-    body.innerHTML = `
-      <div class="session-row">
-        <span class="user-tag">👤 ${esc(cfg.username || 'user')} · ${esc(deviceId || '(chưa gắn thiết bị)')}</span>
-      </div>
-      <button class="btn ghost" id="btn-push">🔔 Bật nhận push</button>
-      <button class="btn ghost" id="btn-logout">Đăng xuất</button>
-      <div class="fcm-state" id="fcm-state">Push: chưa bật</div>`;
-    $('btn-push').onclick = () => enablePush();
-    $('btn-logout').onclick = () => logout();
-  } else {
-    body.innerHTML = `
-      <label>Notification Service URL</label>
-      <input id="cfg-server" value="${esc(cfg.server || 'http://localhost:3001')}" />
-      <label>Tài khoản</label>
-      <input id="cfg-username" value="${esc(cfg.username || 'demo')}" autocomplete="username" />
-      <label>Mật khẩu</label>
-      <input id="cfg-password" type="password" value="demo1234" autocomplete="current-password" />
-      <button class="btn" id="btn-login">Đăng nhập</button>`;
-    $('btn-login').onclick = () => login();
-    $('cfg-password').onkeydown = (e) => { if (e.key === 'Enter') login(); };
-  }
+  body.innerHTML = `
+    ${ready() ? `<div class="user-tag">📟 ${esc(cfg.deviceId)}</div>` : ''}
+    <label>Notification Service URL</label>
+    <input id="cfg-server" value="${esc(cfg.server || 'http://localhost:3001')}" />
+    <label>Device ID (cây/thiết bị màn hình này đứng cạnh)</label>
+    <input id="cfg-device" value="${esc(cfg.deviceId || '')}" placeholder="VD: ESP32S3_Zone1" />
+    <label>API key (x-api-key)</label>
+    <input id="cfg-apikey" type="password" value="${esc(cfg.apiKey || '')}" placeholder="INTERNAL_API_KEY" />
+    <button class="btn" id="btn-save">Lưu cấu hình</button>
+    <button class="btn ghost" id="btn-push">🔔 Bật nhận push</button>
+    <div class="fcm-state" id="fcm-state">Push: ${Notification.permission === 'granted' ? 'quyền đã cấp' : 'chưa bật'}</div>`;
+  $('btn-save').onclick = () => saveSettings();
+  $('btn-push').onclick = () => enablePush();
 }
 
 function updateUserLabel() {
-  if (jwt()) {
-    const claims = parseJwt(authToken) || {};
-    $('user-label').textContent = `${cfg.username || 'user'} · ${claims.deviceId || ''}`;
-  } else {
-    $('user-label').textContent = 'Đăng nhập';
-  }
+  $('user-label').textContent = cfg.deviceId ? cfg.deviceId : 'Cấu hình';
 }
 
-// ── Auth ──────────────────────────────────────────────────────────────────────
-async function login() {
-  const server = ($('cfg-server').value || 'http://localhost:3001').replace(/\/$/, '');
-  const username = $('cfg-username').value.trim();
-  const password = $('cfg-password').value;
-  if (!username || !password) return toast('Thiếu thông tin', 'Nhập tài khoản và mật khẩu.');
-  try {
-    const r = await fetch(`${server}/api/v1/auth/login`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password }),
-    });
-    const json = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(json.message || `HTTP ${r.status}`);
-    authToken = json.token;
-    cfg.server = server; cfg.username = json.user?.username || username; cfg.token = authToken;
-    localStorage.setItem('notiweb-config', JSON.stringify(cfg));
-    updateUserLabel(); renderUserDropdown(); renderAll();
-    loadHistory();   // nạp lịch sử bền vững từ server
-    toast('Đã đăng nhập', `${cfg.username}`);
-    if (Notification.permission === 'granted') enablePush(true);
-  } catch (e) { toast('Đăng nhập lỗi', e.message); }
-}
+function saveSettings() {
+  const server   = ($('cfg-server').value || 'http://localhost:3001').replace(/\/$/, '');
+  const deviceId = $('cfg-device').value.trim();
+  const apiKey   = $('cfg-apikey').value;
+  if (!deviceId || !apiKey) return toast('Thiếu thông tin', 'Cần nhập Device ID và API key.');
 
-async function logout() {
-  try {
-    if (messaging) {
-      const t = await messaging.getToken({ vapidKey: VAPID_KEY }).catch(() => null);
-      if (t) await api('/token', { method: 'DELETE', body: JSON.stringify({ token: t }) }).catch(() => {});
-    }
-  } catch {}
-  resetSession();
-}
-function resetSession() {
-  authToken = ''; delete cfg.token;
+  const deviceChanged = cfg.deviceId && cfg.deviceId !== deviceId;
+  cfg.server = server; cfg.deviceId = deviceId; cfg.apiKey = apiKey;
   localStorage.setItem('notiweb-config', JSON.stringify(cfg));
-  updateUserLabel(); renderUserDropdown(); renderAll();
+
+  if (deviceChanged) {   // đổi cây → xóa danh sách cũ để không lẫn tin của cây khác
+    liveItems = []; liveSeen.clear(); persist();
+  }
+  updateUserLabel(); renderSettings(); renderAll();
+  loadHistory();
+  toast('Đã lưu', `Device: ${deviceId}`);
+  if (Notification.permission === 'granted') enablePush(true);
 }
 
 // ── Push (FCM) ────────────────────────────────────────────────────────────────
 async function enablePush(silent = false) {
-  if (!jwt()) return toast('Chưa đăng nhập', 'Đăng nhập trước khi bật nhận push.');
+  if (!ready()) return toast('Chưa cấu hình', 'Nhập Server, Device ID và API key trước.');
   try {
     const permission = await Notification.requestPermission();
     if (permission !== 'granted') return toast('Bị từ chối', 'Browser không cho phép hiện thông báo.');
@@ -498,7 +463,13 @@ async function enablePush(silent = false) {
     messaging = firebase.messaging();
     const swReg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
     const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
-    await api('/token', { method: 'POST', body: JSON.stringify({ token, device: 'web' }) });
+    // Đăng ký token KÈM deviceId → service chỉ đẩy tin của cây này về màn hình này.
+    const r = await fetch(`${serverUrl()}/internal/push/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': cfg.apiKey || '' },
+      body: JSON.stringify({ token, deviceId: cfg.deviceId, device: 'web' }),
+    });
+    if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.message || `HTTP ${r.status}`); }
     messaging.onMessage(payload => handleIncoming(payload));
     const st = $('fcm-state'); if (st) { st.textContent = 'Push: đang bật'; st.className = 'fcm-state on'; }
     if (!silent) toast('Sẵn sàng 🔔', 'Đã đăng ký nhận cảnh báo.');
@@ -506,13 +477,9 @@ async function enablePush(silent = false) {
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
-if (cfg.token) {
-  const claims = parseJwt(cfg.token);
-  if (claims && (!claims.exp || claims.exp * 1000 > Date.now())) {
-    authToken = cfg.token;
-    loadHistory();   // nạp lịch sử bền vững từ server khi mở lại trang
-    if (Notification.permission === 'granted') enablePush(true);
-  } else { delete cfg.token; localStorage.setItem('notiweb-config', JSON.stringify(cfg)); }
+if (ready()) {
+  loadHistory();   // nạp lịch sử bền vững từ server khi mở lại trang
+  if (Notification.permission === 'granted') enablePush(true);
 }
 
 // Nhận message từ service worker (khi tab ở chế độ nền)
