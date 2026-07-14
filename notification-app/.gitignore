@@ -1,8 +1,0 @@
-node_modules/
-.expo/
-android/
-ios/
-*.log
-
-# Tải từ Firebase Console (Project Settings → Your apps → Android) — mỗi máy tự đặt vào
-google-services.json

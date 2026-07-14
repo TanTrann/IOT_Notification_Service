@@ -150,7 +150,7 @@
   <main>
     <div class="section-row">
       <span class="section-label">Thông báo gần đây</span>
-      <button class="btn-refresh" onclick="renderAll()">↻ Làm mới</button>
+      <button class="btn-refresh" onclick="loadHistory()">↻ Làm mới</button>
     </div>
     <div id="hero" class="empty-hero">
       <div class="head" style="justify-content:center">
@@ -275,10 +275,59 @@ function unreadCount() { return liveItems.filter(n => !n.isRead).length; }
 
 function markReadLive(mid) {
   const n = liveItems.find(x => x._mid === mid);
-  if (n && !n.isRead) { n.isRead = true; persist(); renderAll(); }
+  if (n && !n.isRead) {
+    n.isRead = true; persist(); renderAll();
+    if (n._id) api(`/${n._id}/read`, { method: 'PATCH' }).catch(() => {});   // đồng bộ server
+  }
 }
 function markAllReadLive() {
   liveItems.forEach(n => n.isRead = true); persist(); renderAll();
+  if (jwt()) api('/read-all', { method: 'PATCH' }).catch(() => {});           // đồng bộ server
+}
+
+// ── Lịch sử bền vững từ REST (GET /api/v1/notifications) ────────────────────────
+// Chữ ký nội dung + phút để chống trùng giữa item realtime (FCM) và item từ DB
+// (cùng 1 tin có _mid khác _id nên không dedup được theo id).
+function sigOf(n) {
+  const bucket = Math.floor(new Date(n.createdAt).getTime() / 60000);
+  return `${n.deviceId}|${n.title}|${n.body}|${bucket}`;
+}
+function itemFromServer(d) {
+  return {
+    _mid: 'srv-' + d._id,
+    _id: d._id,
+    title: d.title || 'Thông báo',
+    body:  d.body || '',
+    type: (d.type || '').toLowerCase(),
+    sevRaw: d.severity,
+    severity: normSev(d.severity),
+    deviceId: d.deviceId || '',
+    createdAt: d.createdAt || new Date().toISOString(),
+    isRead: !!d.isRead,
+  };
+}
+async function loadHistory() {
+  if (!jwt()) return renderAll();
+  try {
+    const res = await api('?limit=50');
+    const seen = new Set(liveItems.map(sigOf));
+    for (const s of (res.items || []).map(itemFromServer)) {
+      const sg = sigOf(s);
+      if (seen.has(sg)) {
+        // đã hiển thị (bản realtime) → gắn _id để mark-read đồng bộ được
+        const ex = liveItems.find(x => sigOf(x) === sg);
+        if (ex && !ex._id) ex._id = s._id;
+      } else {
+        seen.add(sg); liveItems.push(s); liveSeen.add(s._mid);
+      }
+    }
+    liveItems.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    liveItems = liveItems.slice(0, 100);
+    persist(); renderAll();
+  } catch (e) {
+    // 401 → api() đã tự resetSession; lỗi khác thì giữ nguyên danh sách realtime
+    console.warn('loadHistory:', e.message);
+  }
 }
 
 // ── Render ────────────────────────────────────────────────────────────────────
@@ -418,6 +467,7 @@ async function login() {
     cfg.server = server; cfg.username = json.user?.username || username; cfg.token = authToken;
     localStorage.setItem('notiweb-config', JSON.stringify(cfg));
     updateUserLabel(); renderUserDropdown(); renderAll();
+    loadHistory();   // nạp lịch sử bền vững từ server
     toast('Đã đăng nhập', `${cfg.username}`);
     if (Notification.permission === 'granted') enablePush(true);
   } catch (e) { toast('Đăng nhập lỗi', e.message); }
@@ -460,6 +510,7 @@ if (cfg.token) {
   const claims = parseJwt(cfg.token);
   if (claims && (!claims.exp || claims.exp * 1000 > Date.now())) {
     authToken = cfg.token;
+    loadHistory();   // nạp lịch sử bền vững từ server khi mở lại trang
     if (Notification.permission === 'granted') enablePush(true);
   } else { delete cfg.token; localStorage.setItem('notiweb-config', JSON.stringify(cfg)); }
 }

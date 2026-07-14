@@ -1,0 +1,43 @@
+# Deploy stack cho máy Mac — CHỈ CẦN FILE NÀY (+ .env, + serviceAccountKey.json).
+# Không cần source code. Image được pull sẵn từ GHCR; MongoDB chạy kèm trong stack.
+#
+#   docker compose -f docker-compose.deploy.yml up -d      # chạy (tự pull image)
+#   docker compose -f docker-compose.deploy.yml pull       # lấy bản mới nhất
+#   docker compose -f docker-compose.deploy.yml logs -f notification
+#   docker compose -f docker-compose.deploy.yml down        # dừng
+#
+# Truy cập: http://localhost:3001/health
+name: iot-notification
+
+services:
+  notification:
+    image: ghcr.io/tantrann/iot_notification_service:latest
+    pull_policy: always
+    ports:
+      - "3001:3001" # host 3001 -> container 3001
+    # Nạp secret từ .env cùng thư mục: JWT_SECRET, INTERNAL_API_KEY, MQTT_*, (Firebase nếu dùng cách B)
+    env_file:
+      - .env
+    environment:
+      PORT: "3001"
+      NODE_ENV: production
+      # Trỏ Mongo trong stack — dùng TÊN SERVICE "mongodb", KHÔNG dùng localhost.
+      MONGODB_URI: mongodb://mongodb:27017/iot_notifications
+      # --- Firebase cách A (khuyến nghị): mount file key, KHÔNG set FIREBASE_PROJECT_ID/CLIENT_EMAIL/PRIVATE_KEY trong .env ---
+      FIREBASE_SERVICE_ACCOUNT_PATH: /app/serviceAccountKey.json
+    volumes:
+      # File serviceAccountKey.json PHẢI tồn tại cạnh compose TRƯỚC khi `up`
+      # (nếu thiếu, Docker sẽ tạo nhầm 1 thư mục). Dùng cách B thì xóa 2 dòng volumes + FIREBASE_SERVICE_ACCOUNT_PATH ở trên.
+      - ./serviceAccountKey.json:/app/serviceAccountKey.json:ro
+    depends_on:
+      - mongodb
+    restart: unless-stopped
+
+  mongodb:
+    image: mongo:7.0
+    volumes:
+      - mongodb_data:/data/db # dữ liệu giữ lại giữa các lần chạy
+    restart: unless-stopped
+
+volumes:
+  mongodb_data:

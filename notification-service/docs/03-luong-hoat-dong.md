@@ -88,8 +88,8 @@ fcmService.sendToAll ──► Firebase ──► web kiosk
 ```
 
 > Danh sách trên màn hình được dựng **realtime ngay trong trang** từ chính message FCM
-> (`onMessage`) — **không phụ thuộc DB**, không poll REST. Reload trang thì mất danh sách cũ
-> (chấp nhận được với màn kiosk luôn mở); muốn giữ lịch sử bền vững thì cần bật lại ghi DB.
+> (`onMessage`). Song song, mỗi tin cũng được **ghi vào MongoDB** (best-effort), nên lịch sử
+> bền vững đọc lại được qua REST `GET /api/v1/notifications` — kể cả sau khi reload hay từ máy khác.
 
 ---
 

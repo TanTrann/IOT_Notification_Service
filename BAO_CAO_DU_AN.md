@@ -87,7 +87,7 @@ Collection `fcmtokens` (đang dùng đầy đủ):
 
 Collection `notifications` (chỉ phục vụ REST đọc của web):
 - eventId, deviceId, title, body, type, severity, isRead, createdAt
-- Lưu ý: luồng MQTT hiện **không ghi** vào collection này (màn hình dựng danh sách realtime từ chính message FCM). REST danh sách sẽ rỗng trừ khi bật lại ghi DB.
+- Lưu ý: luồng MQTT **ghi mỗi tin vào collection này** (best-effort, không chặn push) để REST đọc lại lịch sử bền vững. Màn hình kiosk vẫn hiện realtime từ message FCM; `severity`/`type` được chuẩn hóa cho khớp enum, trùng `eventId` chỉ ghi 1 lần.
 
 
 ## REST API và Endpoint Nội Bộ

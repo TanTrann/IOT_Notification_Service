@@ -103,9 +103,10 @@ Khởi tạo theo thứ tự: nạp `.env` → init Firebase → `startMQTTListe
 
 ## 5. Mô hình dữ liệu (MongoDB)
 
-> Lưu ý: luồng MQTT **không ghi vào collection `notifications`**. Màn hình kiosk dựng danh sách
-> realtime từ chính message FCM (`onMessage`) trong trang. `notifications` chỉ còn để REST web
-> đọc (sẽ **rỗng** trừ khi bật lại ghi DB). `fcmtokens` được dùng đầy đủ.
+> Lưu ý: luồng MQTT **ghi mỗi tin vào collection `notifications`** (best-effort — lỗi ghi DB không
+> chặn việc đẩy push), đồng thời broadcast qua FCM. Màn hình kiosk hiện danh sách realtime từ chính
+> message FCM (`onMessage`); REST `/api/v1/notifications` đọc lại lịch sử bền vững từ DB. `fcmtokens`
+> và `notifications` đều được dùng đầy đủ.
 
 ### Collection `fcmtokens`
 | Trường | Kiểu | Ghi chú |
@@ -115,7 +116,7 @@ Khởi tạo theo thứ tự: nạp `.env` → init Firebase → `startMQTTListe
 | `device` | String | enum: `web`, `android`, `ios` |
 | `createdAt`/`updatedAt` | Date | tự động |
 
-### Collection `notifications` (chỉ REST đọc — hiện không được ghi)
+### Collection `notifications` (ghi từ luồng MQTT, REST đọc lại)
 `eventId`, `deviceId`, `title`, `body`, `type`, `severity`, `isRead`, `data`, `createdAt`.
 
 ---
@@ -125,7 +126,6 @@ Khởi tạo theo thứ tự: nạp `.env` → init Firebase → `startMQTTListe
 | Folder | Vai trò | Nhận thông báo |
 |---|---|---|
 | [`../../notification-web/`](../../notification-web/README.md) | **Màn hình kiosk cạnh cây** (chạy full-screen) | Firebase Web Push (`onMessage` → danh sách trong trang) |
-| [`../../notification-app/`](../../notification-app/README.md) | App Android (RN + Expo) — **chỉ FCM** | FCM push native (đăng ký `/internal/push/token`); danh sách dựng từ message FCM, lưu AsyncStorage |
 
 ---
 

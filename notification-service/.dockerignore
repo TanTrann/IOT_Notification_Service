@@ -1,0 +1,23 @@
+# KHÔNG đưa các thứ này vào image (bảo mật + gọn image)
+node_modules
+npm-debug.log*
+
+# Secrets — tuyệt đối không nhét vào image
+.env
+.env.*
+serviceAccountKey.json
+firebase-adminsdk*.json
+*.pem
+*.key
+
+# Rác
+*.log
+logs
+.git
+.gitignore
+.vscode
+.idea
+docs
+Dockerfile
+.dockerignore
+docker-compose*.yml
