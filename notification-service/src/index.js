@@ -33,7 +33,7 @@ app.use(morgan(isProd ? 'combined' : 'dev'));
 
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/notifications', notificationRoutes);
-app.use('/internal', internalRoutes);   // MCP server (Phong) đẩy vào + màn hình rời — auth API key
+app.use('/internal', internalRoutes);   // client nội bộ đăng ký/hủy FCM token — auth API key
 
 app.get('/health', (_req, res) => res.json({ status: 'ok', message: 'Notification Service is running' }));
 
