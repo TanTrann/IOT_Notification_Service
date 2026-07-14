@@ -2,67 +2,62 @@
 
 Tài liệu mô tả kiến trúc của **IOT Notification Service** — vai trò từng thành phần, cách chúng kết nối và mô hình dữ liệu.
 
+> **Mô hình hiện tại (Firebase-only):** service nghe topic `planttree/{deviceId}/notifications`
+> (wildcard `planttree/+/notifications`), **không dịch/biến đổi** payload, và **broadcast push qua
+> Firebase (FCM)** tới mọi client đã đăng ký. Màn hình hiển thị (kiosk web cạnh cây) nhận qua
+> **Firebase Web Push**. Đã gỡ bỏ: SSE/`displayHub`, luồng dịch sensor/ngưỡng, ghi DB thông báo.
+
 ---
 
 ## 1. Sơ đồ kiến trúc tổng thể
 
 ```
-┌─────────────────┐
-│  Thiết bị IoT   │  ESP32 + cảm biến (độ ẩm đất, nhiệt độ, ánh sáng)
-│   (xmini)       │
-└────────┬────────┘
-         │ publish MQTT
-         ▼
-┌─────────────────────────┐
-│      MQTT Broker         │   HiveMQ Cloud (TLS, cổng 8883)
-│  xmini/sensor_data       │   — dùng chung với hệ của Phong
-│  xmini/control           │
-└────────┬────────────────┘
+┌──────────────┐
+│  MCP Server  │  (Phong) — sinh thông báo JSON tự do
+└──────┬───────┘
+       │ publish JSON lên planttree/{deviceId}/notifications
+       ▼
+┌───────────────────────────────────┐
+│           MQTT Broker             │   HiveMQ Cloud (TLS, cổng 8883)
+│ planttree/{deviceId}/notifications │   — dùng chung với hệ của Phong
+└────────┬──────────────────────────┘
          │ subscribe (QoS 1)
          ▼
-╔═══════════════════════════════════════════════════════════════════╗
-║                  IOT NOTIFICATION SERVICE (Node.js)                 ║
-║                                                                     ║
-║  ┌──────────────┐                                                   ║
-║  │ mqttHandler  │  nhận & parse message, điều phối                  ║
-║  └──────┬───────┘                                                   ║
-║         │                                                           ║
-║         ├──► eventTranslator   (số đo → thông báo, dịch lệnh)       ║
-║         │       evaluateSensorData() / translateControl()           ║
-║         │                                                           ║
-║         ▼                                                           ║
-║  ┌────────────────────┐      ┌──────────────┐                       ║
-║  │ notificationService│ ───► │   MongoDB    │  lưu notifications     ║
-║  │  (lưu DB + dedup)  │      │  (Mongoose)  │  & fcmtokens           ║
-║  └─────────┬──────────┘      └──────────────┘                       ║
-║            │                                                        ║
-║            ▼                                                        ║
-║  ┌────────────────┐         ┌──────────────────┐                    ║
-║  │   fcmService   │ ──────► │  Firebase (FCM)  │ ──► push tới client ║
-║  └────────────────┘         └──────────────────┘                    ║
-║                                                                     ║
-║  ┌──────────────────────────── REST API (Express) ──────────────┐  ║
-║  │ routes → controller → service     [middleware: auth JWT]      │  ║
-║  │ /api/v1/notifications/*           [helmet, cors, compression] │  ║
-║  └───────────────────────────────────────────────────────────────┘ ║
-╚═══════════════════════════════════════════════════════════════════╝
-         ▲                                              │ push
-         │ REST (JWT)                                   ▼
-┌────────┴────────┐                          ┌──────────────────┐
-│  App / Web      │ ◄────────────────────────│  Web/Android/iOS  │
-│  (client)       │   nhận notification       │  (FCM client)     │
-└─────────────────┘                          └──────────────────┘
+╔══════════════════════════════════════════════════════════════╗
+║              IOT NOTIFICATION SERVICE (Node.js)              ║
+║                                                              ║
+║   ┌──────────────┐  parse JSON — KHÔNG dịch/biến đổi          ║
+║   │ mqttHandler  │  bóc deviceId từ topic                     ║
+║   └──────┬───────┘                                            ║
+║          │                                                   ║
+║          └──► fcmService.sendToAll ──► Firebase Admin (FCM)   ║
+║                                                              ║
+║   ┌───────────── HTTP API (Express) ─────────────────────┐  ║
+║   │ /internal/push/token   [API key]  đăng ký FCM token   │  ║
+║   │ /api/v1/auth/login     [—]        đăng nhập → JWT      │  ║
+║   │ /api/v1/notifications  [JWT]      REST (web, đọc DB)   │  ║
+║   └────────────────────────────────────────────────────────┘ ║
+╚══════════════════════════════════════════════════════════════╝
+                              │ push (FCM)
+                              ▼
+                  ┌──────────────────────────┐
+                  │  Web kiosk cạnh cây       │  Firebase Web Push
+                  │  (notification-web)       │  onMessage → danh sách trong trang
+                  └──────────────────────────┘
 ```
 
 ---
 
-## 2. Ba đầu vào của hệ thống
+## 2. Các đầu vào của hệ thống
 
 | Đầu vào | Nguồn | Xử lý bởi |
 |---|---|---|
-| **Dữ liệu cảm biến** | MQTT `xmini/sensor_data` | `mqttHandler` → `eventTranslator.evaluateSensorData()` |
-| **Lệnh điều khiển** | MQTT `xmini/control` | `mqttHandler` → `eventTranslator.translateControl()` |
-| **Yêu cầu từ client** | REST API (JWT) | `routes` → `controller` → `notificationService` |
+| **Thông báo từ MCP** | MQTT `planttree/{deviceId}/notifications` | `mqttHandler` → `fcmService.sendToAll` |
+| **Đăng ký nhận push** | `POST /internal/push/token` (API key) | `internalRoutes` → lưu `fcmtokens` |
+| **Yêu cầu từ web (REST)** | `/api/v1/*` (JWT) | `routes` → `controller` → `notificationService` (đọc DB) |
+
+> Payload là **JSON object bất kỳ**; `deviceId` lấy từ topic. Service chỉ bóc `title`/`body`/
+> `severity`/`type` để đặt tiêu đề/nội dung push cho đẹp — **không bắt buộc** field nào, không đổi dữ liệu gốc.
 
 ---
 
@@ -75,72 +70,71 @@ Khởi tạo theo thứ tự: nạp `.env` → init Firebase → `startMQTTListe
 | File | Trách nhiệm |
 |---|---|
 | `mqtt.js` | Tạo kết nối MQTT (TLS), auto-reconnect 5s, QoS 1 |
-| `database.js` | Kết nối MongoDB qua Mongoose |
-| `firebase.js` | Khởi tạo Firebase Admin SDK (env hoặc serviceAccountKey.json) |
+| `firebase.js` | Khởi tạo Firebase Admin SDK (env hoặc serviceAccountKey.json) — **cốt lõi phần push** |
+| `database.js` | Kết nối MongoDB (lưu FCM token; REST đọc) |
 
 ### 3.3. Tầng dịch vụ — `src/services/`
 | File | Trách nhiệm chính |
 |---|---|
-| `mqttHandler.js` | `startMQTTListener()`: subscribe 2 topic, parse JSON, điều phối sang translator, đẩy kết quả vào `notificationService.notify()` |
-| `eventTranslator.js` | `evaluateSensorData(raw)`: mỗi số đo → 1 thông báo (KHÔNG ngưỡng), chống spam khi **giá trị không đổi**. `translateControl(raw)`: ánh xạ lệnh → 1 thông báo |
-| `notificationService.js` | `notify()`: lưu DB + chống trùng (lỗi 11000) + gọi FCM. `getByUser()`, `markRead()`, `markAllRead()`, `getUnreadCount()` |
-| `fcmService.js` | `sendToDevice()`, `sendToUser()`; tự xóa token chết |
+| `mqttHandler.js` | `startMQTTListener()`: subscribe `planttree/+/notifications` (env `MQTT_NOTIFICATION_TOPIC`), bóc `deviceId` từ topic, parse JSON, gọi `fcmService.sendToAll()`. Không dịch/biến đổi. |
+| `fcmService.js` | `sendToDevice()`, `sendToAll()` (broadcast mọi token); tự xóa token chết khi Firebase báo không hợp lệ. |
+| `notificationService.js` | Chỉ còn phần **đọc** cho REST web: `getByUser()`, `markRead()`, `markAllRead()`, `getUnreadCount()`. |
 
-### 3.4. Tầng API — `controllers` / `routes` / `middlewares`
-- `routes/notificationRoutes.js`: định nghĩa endpoint dưới `/api/v1/notifications`.
-- `controllers/notificationController.js`: xử lý request, gọi service, trả JSON chuẩn `{ success, ... }`.
-- `middlewares/auth.js`: xác thực JWT Bearer, giải mã lấy `deviceId` (từ `deviceId`/`sub`/`id`).
+### 3.4. Tầng API — `routes` / `controllers` / `middlewares`
+- `routes/internalRoutes.js`: `POST|DELETE /internal/push/token` — đăng ký/hủy FCM token. Bảo vệ bằng **API key** (`internalAuth`).
+- `routes/notificationRoutes.js` + `controllers/notificationController.js`: `/api/v1/notifications/*` cho web (JWT).
+- `routes/authRoutes.js` + `controllers/authController.js`: `POST /api/v1/auth/login` → JWT.
+- `middlewares/internalAuth.js`: kiểm tra `x-api-key` header hoặc `?key=` query.
+- `middlewares/auth.js`: xác thực JWT Bearer, lấy `deviceId`.
 - `utils/asyncHandler.js`: bọc handler async để bắt lỗi tập trung.
 
 ---
 
-## 4. Mô hình dữ liệu (MongoDB)
+## 4. Kênh giao thông báo: Firebase (FCM)
 
-### Collection `notifications`
-| Trường | Kiểu | Ghi chú |
+| Kênh | Cách gửi | Client nhận |
 |---|---|---|
-| `eventId` | String | **unique, sparse** — khóa chống trùng sự kiện |
-| `deviceId` | String | bắt buộc — định danh thiết bị/người dùng |
-| `title` | String | bắt buộc |
-| `body` | String | bắt buộc |
-| `type` | String | enum: `disease`, `water`, `nutrition`, `light`, `temperature`, `system` |
-| `severity` | String | enum: `critical`, `warning`, `info` (mặc định `info`) |
-| `data` | Mixed | payload/ngữ cảnh thô |
-| `isRead` | Boolean | mặc định `false` |
-| `createdAt`/`updatedAt` | Date | tự động |
+| **FCM push** | `fcmService.sendToAll` → Firebase Admin `messaging.send()` | Web kiosk qua **Firebase Web Push** (SDK JS + service worker): `onMessage` (tab mở) hiện danh sách trong trang; service worker hiện khi tab đóng |
 
-Index: `{ deviceId:1, createdAt:-1 }` (lấy lịch sử), `{ deviceId:1, isRead:1 }` (đếm chưa đọc).
+> Đã **bỏ SSE**. Màn hình hiển thị dựa hoàn toàn vào Firebase Web Push. Chi tiết luồng xem
+> [03-luong-hoat-dong.md](03-luong-hoat-dong.md); cấu hình Firebase 2 phía xem [01-firebase-setup.md](01-firebase-setup.md).
+
+---
+
+## 5. Mô hình dữ liệu (MongoDB)
+
+> Lưu ý: luồng MQTT **không ghi vào collection `notifications`**. Màn hình kiosk dựng danh sách
+> realtime từ chính message FCM (`onMessage`) trong trang. `notifications` chỉ còn để REST web
+> đọc (sẽ **rỗng** trừ khi bật lại ghi DB). `fcmtokens` được dùng đầy đủ.
 
 ### Collection `fcmtokens`
 | Trường | Kiểu | Ghi chú |
 |---|---|---|
-| `deviceId` | String | bắt buộc |
-| `token` | String | bắt buộc, **unique** — Firebase registration token |
-| `device` | String | enum: `web`, `android`, `ios` (mặc định `web`) |
+| `deviceId` | String | client đăng ký qua `/internal/push/token` dùng `'broadcast'`; web (REST) dùng deviceId từ JWT |
+| `token` | String | **unique** — Firebase registration token |
+| `device` | String | enum: `web`, `android`, `ios` |
 | `createdAt`/`updatedAt` | Date | tự động |
 
-Index: `{ deviceId:1 }`.
+### Collection `notifications` (chỉ REST đọc — hiện không được ghi)
+`eventId`, `deviceId`, `title`, `body`, `type`, `severity`, `isRead`, `data`, `createdAt`.
 
 ---
 
-## 5. Các client trong repo
+## 6. Các client trong repo
 
-| Folder | Vai trò | Chạy |
+| Folder | Vai trò | Nhận thông báo |
 |---|---|---|
-| [`../../notification-web/`](../../notification-web/README.md) | Trung tâm thông báo cho người dùng cuối trên browser (push FCM + lịch sử + đã đọc) | `npm run dev` → port 3000 |
-| [`../../notification-app/`](../../notification-app/README.md) | App Android (React Native + Expo) — cùng tính năng với web, push native | `npx expo run:android` |
-| [`../../test-client/`](../../test-client/README.md) | Công cụ dev: giả lập ESP32 + server .NET của Phong để test end-to-end | `npm run dev` → port 8080 |
-
-Cả ba đăng ký FCM token qua `POST /token` với JWT — backend không phân biệt client nào.
+| [`../../notification-web/`](../../notification-web/README.md) | **Màn hình kiosk cạnh cây** (chạy full-screen) | Firebase Web Push (`onMessage` → danh sách trong trang) |
+| [`../../notification-app/`](../../notification-app/README.md) | App Android (RN + Expo) — **chỉ FCM** | FCM push native (đăng ký `/internal/push/token`); danh sách dựng từ message FCM, lưu AsyncStorage |
 
 ---
 
-## 6. Nguyên tắc thiết kế
+## 7. Nguyên tắc thiết kế
 
-- **Chịu lỗi mềm (graceful degradation):** thiếu MQTT/MongoDB/Firebase → log cảnh báo, **không crash**.
-- **Chống trùng & chống spam:** `eventId` unique + bỏ qua khi số đo không đổi.
-- **Đa phiên:** một `deviceId` có nhiều FCM token (nhiều browser/máy); push gửi song song tới tất cả.
-- **Tách lớp rõ ràng:** config → services → (api: routes/controllers). MQTT và REST dùng chung tầng service.
-- **Bảo mật:** JWT cho route bảo vệ, Helmet headers, CORS whitelist, ẩn chi tiết lỗi ở production.
+- **Firebase là trung tâm:** deliverable của module là push qua Firebase — mọi thông báo đi qua FCM.
+- **Không dịch payload:** service là ống dẫn trung thực từ MCP tới client.
+- **Broadcast:** mô hình "1 loại thông báo — ai đăng ký cũng nhận" (`sendToAll`). Có thể chuyển sang targeting theo `deviceId` (đã bóc sẵn từ topic) bằng `sendToUser` khi client đăng ký token kèm deviceId thật.
+- **Chịu lỗi mềm:** thiếu MQTT/MongoDB/Firebase → log cảnh báo, không crash. FCM lỗi không chặn luồng.
+- **Tách xác thực:** `/internal/*` API key, `/api/v1/*` JWT.
 
 > Chi tiết các luồng chạy thực tế xem [03-luong-hoat-dong.md](03-luong-hoat-dong.md).

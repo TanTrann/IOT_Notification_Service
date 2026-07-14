@@ -11,6 +11,14 @@ xử lý và tạo thông báo. Website chỉ làm 2 việc:
 
 > Tham khảo triển khai mẫu hoàn chỉnh (1 file HTML): [`../../notification-web/index.html`](../../notification-web/index.html)
 
+> ⚠️ **Cập nhật theo mô hình hiện tại (`planttree/{deviceId}/notifications`):**
+> - **Push (FCM) vẫn hoạt động**: mỗi tin trên topic thông báo, service **broadcast** tới
+>   **mọi** token đã đăng ký (kể cả token web). Phần đăng ký token + nhận push ở dưới vẫn đúng.
+> - **REST danh sách hiện trả rỗng**: luồng MQTT mới **không ghi vào MongoDB** nữa (đã bỏ
+>   `notify()`), nên `GET /api/v1/notifications` sẽ không có dữ liệu trừ khi khôi phục việc ghi DB.
+>   Màn hình kiosk (`notification-web`) dựng danh sách realtime **ngay trong trang từ chính message
+>   FCM** (`onMessage` → `prependLive`), không cần REST/DB. Nếu cần lịch sử bền vững thì bật lại ghi DB.
+
 ---
 
 ## 1. Những thứ được bàn giao

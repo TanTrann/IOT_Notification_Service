@@ -20,6 +20,12 @@ self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => e.waitUntil(clients.claim()));
 
 messaging.onBackgroundMessage((payload) => {
+  // Chuyển message tới MỌI trang đang mở để cập nhật danh sách (dù tab không focus).
+  // Nhờ vậy màn hình kiosk vẫn ghi được tin đến lúc tab ở chế độ nền.
+  clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+    for (const c of list) c.postMessage({ type: 'fcm', payload });
+  });
+
   // Message có field `notification` → FCM SDK/Chrome TỰ hiển thị rồi.
   // Tự show thêm ở đây sẽ bị NHÂN ĐÔI thông báo — chỉ show cho data-only message.
   if (payload.notification) return;

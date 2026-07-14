@@ -7,130 +7,163 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
-      --bg: #f0f4f2; --card: #fff; --text: #1e2a26; --muted: #6b7a74;
+      --bg: #eef3f0; --card: #fff; --text: #1e2a26; --muted: #6b7a74;
       --brand: #1f8a4c; --brand-dark: #176e3c;
       --info: #2d7ff9; --warning: #e8930c; --critical: #e0442e;
       --border: #e2e8e5;
     }
     body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
-    .container { max-width: 640px; margin: 0 auto; padding: 20px 16px 60px; }
 
-    /* Header */
-    header { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
-    header h1 { font-size: 1.25rem; flex: 1; }
-    .bell { position: relative; font-size: 1.5rem; }
-    .bell .badge-count {
-      position: absolute; top: -6px; right: -10px; background: var(--critical); color: #fff;
-      font-size: .68rem; font-weight: 700; border-radius: 999px; padding: 1px 6px; min-width: 18px; text-align: center;
+    /* ── Header ─────────────────────────────── */
+    header {
+      display: flex; align-items: center; gap: 12px; padding: 14px 22px;
+      background: var(--card); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 20;
     }
-    .chip { font-size: .75rem; padding: 3px 10px; border-radius: 999px; background: #e7efe9; color: var(--muted); }
-    .chip.on { background: #d7f0e0; color: var(--brand-dark); font-weight: 600; }
+    header .logo { font-size: 1.5rem; }
+    header h1 { font-size: 1.15rem; font-weight: 700; flex: 1; }
+    .icon-btn {
+      position: relative; background: #f2f6f4; border: 1px solid var(--border); cursor: pointer;
+      border-radius: 10px; padding: 8px 12px; font-size: 1rem; display: flex; align-items: center; gap: 7px;
+      color: var(--text);
+    }
+    .icon-btn:hover { background: #e7efe9; }
+    .icon-btn .u-label { font-size: .85rem; font-weight: 600; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .badge-count {
+      position: absolute; top: -6px; right: -6px; background: var(--critical); color: #fff;
+      font-size: .66rem; font-weight: 700; border-radius: 999px; padding: 1px 6px; min-width: 18px; text-align: center;
+    }
 
-    /* Cards */
-    .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px; margin-bottom: 14px; }
-    .card h2 { font-size: .95rem; margin-bottom: 12px; color: var(--muted); font-weight: 600; }
-    label { display: block; font-size: .8rem; color: var(--muted); margin-bottom: 4px; }
-    input, textarea {
-      width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: 8px;
-      font-size: .88rem; margin-bottom: 10px; background: #fafcfb;
+    /* ── Dropdown chung ─────────────────────── */
+    .dropdown {
+      position: absolute; top: 60px; right: 18px; width: min(400px, 94vw); z-index: 30;
+      background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+      box-shadow: 0 12px 40px rgba(0,0,0,.16); overflow: hidden;
     }
-    textarea { resize: vertical; font-family: monospace; min-height: 60px; }
-    button {
-      padding: 9px 16px; background: var(--brand); color: #fff; border: none;
-      border-radius: 8px; cursor: pointer; font-size: .87rem; font-weight: 600; margin-right: 8px;
+    .dropdown[hidden] { display: none; }
+    .dd-head {
+      display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--border);
     }
-    button:hover { background: var(--brand-dark); }
-    button.ghost { background: transparent; color: var(--brand-dark); border: 1px solid var(--border); font-weight: 500; }
-    button.ghost:hover { background: #eef4f0; }
-    button:disabled { opacity: .5; cursor: default; }
-    .hint { font-size: .78rem; color: var(--muted); background: #fbf6e9; border-left: 3px solid var(--warning);
-            padding: 8px 10px; border-radius: 6px; margin-bottom: 12px; }
-    .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .dd-head h3 { font-size: .95rem; flex: 1; }
+    .dd-head button, .btn {
+      padding: 6px 11px; background: var(--brand); color: #fff; border: none; border-radius: 7px;
+      cursor: pointer; font-size: .8rem; font-weight: 600;
+    }
+    .dd-head button:hover, .btn:hover { background: var(--brand-dark); }
+    .btn.ghost, .dd-head button.ghost { background: transparent; color: var(--brand-dark); border: 1px solid var(--border); }
+    .btn.ghost:hover, .dd-head button.ghost:hover { background: #eef4f0; }
+    .btn { width: 100%; padding: 10px; margin-top: 6px; }
+    .dd-list { max-height: 60vh; overflow-y: auto; padding: 8px; }
 
-    /* Feed */
-    .feed-head { display: flex; align-items: center; margin: 20px 0 10px; gap: 8px; }
-    .feed-head h2 { font-size: 1rem; flex: 1; }
+    /* ── Item thông báo (trong dropdown) ─────── */
     .noti {
-      display: flex; gap: 12px; background: var(--card); border: 1px solid var(--border);
-      border-left-width: 4px; border-radius: 12px; padding: 13px 14px; margin-bottom: 10px;
-      cursor: pointer; transition: background .15s;
+      display: flex; gap: 10px; background: var(--card); border: 1px solid var(--border);
+      border-left-width: 4px; border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; cursor: pointer;
     }
     .noti:hover { background: #fafdfb; }
-    .noti.sev-info     { border-left-color: var(--info); }
-    .noti.sev-warning  { border-left-color: var(--warning); }
+    .noti.sev-info { border-left-color: var(--info); }
+    .noti.sev-warning { border-left-color: var(--warning); }
     .noti.sev-critical { border-left-color: var(--critical); }
-    .noti .icon { font-size: 1.35rem; line-height: 1.5; }
+    .noti .icon { font-size: 1.25rem; line-height: 1.4; }
     .noti .content { flex: 1; min-width: 0; }
-    .noti .title { font-size: .92rem; font-weight: 500; display: flex; align-items: center; gap: 6px; }
+    .noti .title { font-size: .9rem; font-weight: 500; display: flex; align-items: center; gap: 6px; }
     .noti.unread .title { font-weight: 700; }
     .noti.unread .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--info); flex-shrink: 0; }
-    .noti .body { font-size: .85rem; color: var(--muted); margin-top: 3px; word-wrap: break-word; }
-    .noti .meta { font-size: .74rem; color: #98a6a0; margin-top: 6px; }
-    .empty { text-align: center; color: var(--muted); padding: 40px 0; font-size: .9rem; }
-    #load-more { display: block; margin: 14px auto 0; }
+    .noti .body { font-size: .82rem; color: var(--muted); margin-top: 3px; word-wrap: break-word; }
+    .noti .meta { font-size: .72rem; color: #98a6a0; margin-top: 5px; }
+    .empty { text-align: center; color: var(--muted); padding: 34px 12px; font-size: .88rem; line-height: 1.5; }
 
-    /* Toast */
-    #toast-zone { position: fixed; bottom: 20px; right: 20px; z-index: 99; display: flex; flex-direction: column; gap: 10px; }
-    .toast {
-      background: var(--text); color: #fff; border-radius: 10px; padding: 12px 16px;
-      max-width: 320px; box-shadow: 0 6px 24px rgba(0,0,0,.25); font-size: .85rem;
-      animation: slidein .25s ease;
+    /* ── Form đăng nhập / phiên (trong user dropdown) ── */
+    .dd-body { padding: 14px; }
+    .dd-body label { display: block; font-size: .78rem; color: var(--muted); margin: 8px 0 4px; }
+    .dd-body input {
+      width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: 8px;
+      font-size: .86rem; background: #fafcfb; color: var(--text);
     }
+    .session-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .user-tag { font-size: .85rem; font-weight: 600; color: var(--brand-dark); background: #d7f0e0; padding: 6px 10px; border-radius: 8px; }
+    .fcm-state { font-size: .76rem; color: var(--muted); margin-top: 10px; }
+    .fcm-state.on { color: var(--brand-dark); font-weight: 600; }
+
+    /* ── Hero: thông báo gần đây (giữa trang) ── */
+    main { max-width: 720px; margin: 0 auto; padding: 40px 20px; }
+    .section-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+    .section-label { font-size: .8rem; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .8px; }
+    .btn-refresh {
+      background: var(--card); border: 1px solid var(--border); color: var(--brand-dark);
+      border-radius: 8px; padding: 6px 12px; font-size: .8rem; font-weight: 600; cursor: pointer;
+    }
+    .btn-refresh:hover { background: #eef4f0; }
+    #recent-mini { margin-top: 14px; display: flex; flex-direction: column; gap: 10px; }
+    #recent-mini .noti { margin-bottom: 0; border-radius: 12px; }
+    #hero {
+      background: var(--card); border: 1px solid var(--border); border-left: 6px solid var(--muted);
+      border-radius: 20px; padding: 32px 30px; box-shadow: 0 6px 24px rgba(0,0,0,.05);
+    }
+    #hero.sev-info { border-left-color: var(--info); }
+    #hero.sev-warning { border-left-color: var(--warning); }
+    #hero.sev-critical { border-left-color: var(--critical); }
+    #hero .head { display: flex; gap: 20px; align-items: center; }
+    #hero .h-icon { font-size: 3.2rem; line-height: 1; }
+    #hero .h-title { font-size: 1.5rem; font-weight: 700; line-height: 1.3; }
+    #hero .h-body { font-size: 1.05rem; color: var(--muted); margin-top: 8px; line-height: 1.5; white-space: pre-wrap; }
+    #hero .h-meta { font-size: .82rem; color: var(--muted); margin-top: 14px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    .sev-badge { font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; padding: 3px 9px; border-radius: 6px; color: #fff; }
+    #hero.empty-hero { border-left-color: var(--border); text-align: center; color: var(--muted); }
+    @keyframes flash { 0% { transform: scale(.99); filter: brightness(1.3); } 100% { transform: none; filter: none; } }
+    #hero.flash { animation: flash .5s ease; }
+
+    /* ── Toast ─────────────────────────────── */
+    #toast-zone { position: fixed; bottom: 20px; right: 20px; z-index: 99; display: flex; flex-direction: column; gap: 10px; }
+    .toast { background: var(--text); color: #fff; border-radius: 10px; padding: 12px 16px; max-width: 320px; box-shadow: 0 6px 24px rgba(0,0,0,.25); font-size: .85rem; animation: slidein .25s ease; }
     .toast b { display: block; margin-bottom: 2px; }
     @keyframes slidein { from { transform: translateX(30px); opacity: 0; } to { transform: none; opacity: 1; } }
-    .collapsed-body { display: none; }
+    code { background: #eef4f0; padding: 1px 5px; border-radius: 4px; font-size: .9em; }
   </style>
 </head>
 <body>
-<div class="container">
   <header>
-    <span class="bell">🔔<span class="badge-count" id="unread-badge" hidden>0</span></span>
-    <h1>SmartFarm — Trung tâm thông báo</h1>
-    <span class="chip" id="fcm-chip">Chưa bật push</span>
+    <span class="logo">🌱</span>
+    <h1>SmartFarm</h1>
+    <button class="icon-btn" id="bell-btn" title="Thông báo">
+      🔔<span class="badge-count" id="unread-badge" hidden>0</span>
+    </button>
+    <button class="icon-btn" id="user-btn" title="Tài khoản">
+      👤<span class="u-label" id="user-label">Đăng nhập</span>
+    </button>
   </header>
 
-  <!-- Kết nối -->
-  <div class="card" id="setup-card">
-    <h2 style="cursor:pointer" onclick="toggleSetup()">⚙️ Kết nối <span id="setup-arrow">▾</span></h2>
-    <div id="setup-body">
-      <div class="hint">
-        Đăng nhập bằng tài khoản demo (tạo bằng <code>node seed-users.js</code> ở service).
-        Mặc định: <code>demo</code> / <code>demo1234</code>. Thông báo hiển thị theo thiết bị gắn với tài khoản.
-      </div>
-      <label>Notification Service URL</label>
-      <input id="cfg-server" value="http://localhost:3001" />
-      <div id="login-form">
-        <label>Tài khoản</label>
-        <input id="cfg-username" value="demo" autocomplete="username" />
-        <label>Mật khẩu</label>
-        <input id="cfg-password" type="password" value="demo1234" autocomplete="current-password"
-               onkeydown="if(event.key==='Enter')login()" />
-        <div class="row">
-          <button onclick="login()">Đăng nhập</button>
-          <span class="chip" id="device-chip" hidden></span>
-        </div>
-      </div>
-      <div id="session-box" hidden>
-        <div class="row">
-          <span class="chip on" id="user-chip"></span>
-          <button class="ghost" onclick="enablePush()">🔔 Bật nhận push</button>
-          <button class="ghost" onclick="logout()">Đăng xuất</button>
+  <!-- Dropdown: danh sách thông báo -->
+  <div class="dropdown" id="bell-dropdown" hidden>
+    <div class="dd-head">
+      <h3>Thông báo</h3>
+      <button class="ghost" onclick="markAllReadLive()">✓ Đọc tất cả</button>
+    </div>
+    <div class="dd-list" id="dropdown-list"></div>
+  </div>
+
+  <!-- Dropdown: tài khoản (form đăng nhập / phiên) -->
+  <div class="dropdown" id="user-dropdown" hidden>
+    <div class="dd-body" id="user-body"><!-- render theo trạng thái đăng nhập --></div>
+  </div>
+
+  <!-- Giữa trang: thông báo gần đây nhất + 2 tin nhỏ bên dưới -->
+  <main>
+    <div class="section-row">
+      <span class="section-label">Thông báo gần đây</span>
+      <button class="btn-refresh" onclick="renderAll()">↻ Làm mới</button>
+    </div>
+    <div id="hero" class="empty-hero">
+      <div class="head" style="justify-content:center">
+        <div>
+          <div class="h-title">Chưa có thông báo</div>
+          <div class="h-body">Thông báo mới sẽ hiện ở đây theo thời gian thực.</div>
         </div>
       </div>
     </div>
-  </div>
+    <div id="recent-mini"></div>
+  </main>
 
-  <!-- Feed -->
-  <div class="feed-head">
-    <h2>Thông báo <span id="unread-inline" style="color:var(--muted);font-weight:400;font-size:.85rem"></span></h2>
-    <button class="ghost" onclick="markAllRead()">✓ Đọc tất cả</button>
-    <button class="ghost" onclick="refresh()">↻ Làm mới</button>
-  </div>
-  <div id="feed"><div class="empty">Nhập JWT và bấm "Lưu &amp; Kết nối" để xem thông báo.</div></div>
-  <button id="load-more" class="ghost" onclick="loadMore()" hidden>Tải thêm</button>
-</div>
-
-<div id="toast-zone"></div>
+  <div id="toast-zone"></div>
 
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
@@ -145,15 +178,16 @@ const FIREBASE_CONFIG = {
 };
 const VAPID_KEY = "BNOC91dgjosxTi-sHV8HaeTx3jKUAUwVAvyWY4tMc_zbMuoMmad0r1h3Rodl92k2bM_E6y4OmHiLP9jSsJ26G6Q";
 
-const TYPE_ICON = { water: '💧', light: '💡', temperature: '🌡️', nutrition: '🌱', disease: '🦠', system: '⚙️' };
+const TYPE_ICON = { water: '💧', light: '💡', temperature: '🌡️', temp: '🌡️', nutrition: '🌱', disease: '🦠', system: '⚙️', alert: '⚠️' };
+const SEV_COLOR = { info: '#2d7ff9', warning: '#e8930c', critical: '#e0442e' };
+const SEV_LABEL = { critical: 'Nguy cấp', warning: 'Cảnh báo', info: 'Thông tin' };
 
-// ── State ───────────────────────────────────────────────────────────────────
-let page = 1, totalLoaded = 0, messaging = null;
-let authToken = '';                       // JWT nhận sau khi đăng nhập (không lộ secret ở client)
+let messaging = null;
+let authToken = '';
 const cfg = JSON.parse(localStorage.getItem('notiweb-config') || '{}');
 
 function $(id) { return document.getElementById(id); }
-function serverUrl() { return ($('cfg-server').value || 'http://localhost:3001').replace(/\/$/, ''); }
+function serverUrl() { return (cfg.server || 'http://localhost:3001').replace(/\/$/, ''); }
 function jwt() { return authToken; }
 function api(path, opts = {}) {
   return fetch(`${serverUrl()}/api/v1/notifications${path}`, {
@@ -161,192 +195,21 @@ function api(path, opts = {}) {
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${jwt()}`, ...(opts.headers || {}) },
   }).then(async r => {
     const json = await r.json().catch(() => ({}));
-    if (r.status === 401) { resetSession(); throw new Error(json.message || 'Phiên hết hạn — đăng nhập lại'); }
+    if (r.status === 401) { resetSession(); throw new Error(json.message || 'Phiên hết hạn'); }
     if (!r.ok) throw new Error(json.message || `HTTP ${r.status}`);
     return json;
   });
 }
 function parseJwt(t) {
-  try { return JSON.parse(atob(t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); }
-  catch { return null; }
+  try { return JSON.parse(atob(t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); } catch { return null; }
 }
-
-// ── Setup / connect ─────────────────────────────────────────────────────────
-function toggleSetup() {
-  $('setup-body').classList.toggle('collapsed-body');
-  $('setup-arrow').textContent = $('setup-body').classList.contains('collapsed-body') ? '▸' : '▾';
-}
-
-async function login() {
-  const username = $('cfg-username').value.trim();
-  const password = $('cfg-password').value;
-  if (!username || !password) return toast('Thiếu thông tin', 'Nhập tài khoản và mật khẩu.');
-  try {
-    const r = await fetch(`${serverUrl()}/api/v1/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password }),
-    });
-    const json = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(json.message || `HTTP ${r.status}`);
-    authToken = json.token;
-    localStorage.setItem('notiweb-config', JSON.stringify({ server: serverUrl(), token: authToken, username }));
-    onLoggedIn(json.user);
-    await refresh();
-    // Đã cấp quyền từ trước thì tự bật lại push (token FCM có thể đổi theo browser profile)
-    if (Notification.permission === 'granted') enablePush(true);
-  } catch (e) {
-    toast('Đăng nhập lỗi', e.message);
-  }
-}
-
-// Hiển thị trạng thái đã đăng nhập. user có thể không có (khi khôi phục từ localStorage) → suy từ token.
-function onLoggedIn(user) {
-  const claims = parseJwt(authToken) || {};
-  const deviceId = user?.deviceId || claims.deviceId || '';
-  $('user-chip').textContent = `👤 ${user?.username || cfg.username || ''} · ${deviceId || '(chưa gắn thiết bị)'}`;
-  $('login-form').hidden = true;
-  $('session-box').hidden = false;
-  toggleSetupCollapsed(true);
-}
-
-async function logout() {
-  // Hủy đăng ký FCM token của máy này để service ngừng push về đây
-  try {
-    if (messaging) {
-      const t = await messaging.getToken({ vapidKey: VAPID_KEY }).catch(() => null);
-      if (t) await api('/token', { method: 'DELETE', body: JSON.stringify({ token: t }) }).catch(() => {});
-    }
-  } catch {}
-  resetSession();
-}
-
-// Xóa phiên + đưa UI về màn đăng nhập (dùng cả khi token hết hạn 401)
-function resetSession() {
-  authToken = '';
-  localStorage.removeItem('notiweb-config');
-  $('login-form').hidden = false;
-  $('session-box').hidden = true;
-  $('feed').innerHTML = '<div class="empty">Đăng nhập để xem thông báo.</div>';
-  setUnread(0);
-  $('fcm-chip').textContent = 'Chưa bật push';
-  $('fcm-chip').className = 'chip';
-  toggleSetupCollapsed(false);
-}
-
-function toggleSetupCollapsed(collapsed) {
-  $('setup-body').classList.toggle('collapsed-body', collapsed);
-  $('setup-arrow').textContent = collapsed ? '▸' : '▾';
-}
-
-// ── Push (FCM) ──────────────────────────────────────────────────────────────
-async function enablePush(silent = false) {
-  if (!jwt()) return toast('Chưa đăng nhập', 'Đăng nhập trước khi bật nhận push.');
-  try {
-    const permission = await Notification.requestPermission();
-    if (permission !== 'granted') return toast('Bị từ chối', 'Browser không cho phép hiện thông báo.');
-
-    if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
-    messaging = firebase.messaging();
-
-    const swReg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
-    const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
-    await api('/token', { method: 'POST', body: JSON.stringify({ token, device: 'web' }) });
-
-    // Push đến khi tab đang mở → toast + refresh danh sách
-    messaging.onMessage(payload => {
-      const n = payload.notification || payload.data || {};
-      toast(n.title || 'Thông báo', n.body || '');
-      refresh();
-    });
-
-    $('fcm-chip').textContent = 'Push: đang bật';
-    $('fcm-chip').className = 'chip on';
-    if (!silent) toast('Sẵn sàng 🔔', 'Đã đăng ký nhận cảnh báo từ hệ thống.');
-  } catch (e) {
-    toast('Lỗi bật push', e.message);
-  }
-}
-
-// ── Feed ────────────────────────────────────────────────────────────────────
-async function refresh() {
-  page = 1;
-  try {
-    const { items, unreadCount } = await api(`/?page=1&limit=20`);
-    renderFeed(items, false);
-    totalLoaded = items.length;
-    $('load-more').hidden = items.length < 20;
-    setUnread(unreadCount);
-  } catch (e) {
-    $('feed').innerHTML = `<div class="empty">Không tải được thông báo: ${e.message}</div>`;
-  }
-}
-
-async function loadMore() {
-  page += 1;
-  const { items } = await api(`/?page=${page}&limit=20`);
-  renderFeed(items, true);
-  totalLoaded += items.length;
-  $('load-more').hidden = items.length < 20;
-}
-
-function renderFeed(items, append) {
-  const feed = $('feed');
-  if (!append) feed.innerHTML = '';
-  if (!items.length && !append) {
-    feed.innerHTML = '<div class="empty">Chưa có thông báo nào. Khi hệ thống phát cảnh báo, nó sẽ hiện ở đây.</div>';
-    return;
-  }
-  for (const n of items) feed.appendChild(renderItem(n));
-}
-
-function renderItem(n) {
-  const el = document.createElement('div');
-  el.className = `noti sev-${n.severity || 'info'}${n.isRead ? '' : ' unread'}`;
-  el.innerHTML = `
-    <div class="icon">${TYPE_ICON[n.type] || '🔔'}</div>
-    <div class="content">
-      <div class="title"><span>${esc(n.title)}</span>${n.isRead ? '' : '<span class="dot"></span>'}</div>
-      <div class="body">${esc(n.body)}</div>
-      <div class="meta">${esc(n.deviceId || '')} · ${timeAgo(n.createdAt)}</div>
-    </div>`;
-  el.onclick = () => markRead(n, el);
-  return el;
-}
-
-async function markRead(n, el) {
-  if (n.isRead) return;
-  try {
-    await api(`/${n._id}/read`, { method: 'PATCH' });
-    n.isRead = true;
-    el.classList.remove('unread');
-    el.querySelector('.dot')?.remove();
-    bumpUnread(-1);
-  } catch (e) { toast('Lỗi', e.message); }
-}
-
-async function markAllRead() {
-  try {
-    await api('/read-all', { method: 'PATCH' });
-    document.querySelectorAll('.noti.unread').forEach(el => {
-      el.classList.remove('unread');
-      el.querySelector('.dot')?.remove();
-    });
-    setUnread(0);
-  } catch (e) { toast('Lỗi', e.message); }
-}
-
-let unreadCount = 0;
-function setUnread(c) {
-  unreadCount = Math.max(0, c);
-  $('unread-badge').hidden = unreadCount === 0;
-  $('unread-badge').textContent = unreadCount > 99 ? '99+' : unreadCount;
-  $('unread-inline').textContent = unreadCount ? `(${unreadCount} chưa đọc)` : '';
-}
-function bumpUnread(d) { setUnread(unreadCount + d); }
-
-// ── Helpers ─────────────────────────────────────────────────────────────────
 function esc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
+function normSev(raw) {
+  const s = String(raw ?? '').toLowerCase();
+  if (['critical', 'crit', 'error', 'danger', 'high', 'nguy cấp'].some(x => s.includes(x))) return 'critical';
+  if (['warning', 'warn', 'medium', 'cảnh báo'].some(x => s.includes(x))) return 'warning';
+  return 'info';
+}
 function timeAgo(iso) {
   if (!iso) return '';
   const s = Math.floor((Date.now() - new Date(iso)) / 1000);
@@ -363,25 +226,253 @@ function toast(title, body) {
   setTimeout(() => t.remove(), 6000);
 }
 
-// ── Boot ────────────────────────────────────────────────────────────────────
-if (cfg.server)   $('cfg-server').value = cfg.server;
-if (cfg.username) $('cfg-username').value = cfg.username;
-// Khôi phục phiên nếu token còn hạn
+// ── Dropdown toggling ─────────────────────────────────────────────────────────
+function closeDropdowns(except) {
+  if (except !== 'bell') $('bell-dropdown').hidden = true;
+  if (except !== 'user') $('user-dropdown').hidden = true;
+}
+$('bell-btn').onclick = (e) => { e.stopPropagation(); const d = $('bell-dropdown'); const show = d.hidden; closeDropdowns('bell'); d.hidden = !show; };
+$('user-btn').onclick = (e) => { e.stopPropagation(); const d = $('user-dropdown'); const show = d.hidden; closeDropdowns('user'); d.hidden = !show; renderUserDropdown(); };
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.dropdown') && !e.target.closest('.icon-btn')) closeDropdowns();
+});
+
+// ── Danh sách realtime từ FCM (foreground onMessage + background từ service worker) ──
+let liveItems = [];
+const liveSeen = new Set();
+try {
+  liveItems = JSON.parse(localStorage.getItem('liveItems') || '[]');
+  liveItems.forEach(n => n._mid && liveSeen.add(n._mid));
+} catch {}
+
+function persist() { localStorage.setItem('liveItems', JSON.stringify(liveItems)); }
+
+function handleIncoming(payload) {
+  const note = payload.notification || {};
+  const meta = payload.data || {};
+  const mid  = payload.messageId || payload.fcmMessageId || `${Date.now()}-${Math.random()}`;
+  if (liveSeen.has(mid)) return;
+  liveSeen.add(mid);
+  const sevRaw = meta.severity;
+  liveItems.unshift({
+    _mid: mid,
+    title: note.title || meta.title || 'Thông báo',
+    body:  note.body  || meta.body  || '',
+    type: (meta.type || '').toLowerCase(),
+    sevRaw,
+    severity: normSev(sevRaw),
+    deviceId: meta.deviceId || '',
+    createdAt: new Date().toISOString(),
+    isRead: false,
+  });
+  liveItems = liveItems.slice(0, 100);
+  persist();
+  toast(note.title || meta.title || 'Thông báo', note.body || meta.body || '');
+  renderAll(true);
+}
+
+function unreadCount() { return liveItems.filter(n => !n.isRead).length; }
+
+function markReadLive(mid) {
+  const n = liveItems.find(x => x._mid === mid);
+  if (n && !n.isRead) { n.isRead = true; persist(); renderAll(); }
+}
+function markAllReadLive() {
+  liveItems.forEach(n => n.isRead = true); persist(); renderAll();
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function renderAll(isNew) {
+  const authed = !!jwt();
+  renderHero(isNew, authed);
+  renderRecent(authed);
+  renderDropdownList(authed);
+  const c = authed ? unreadCount() : 0;
+  $('unread-badge').hidden = c === 0;
+  $('unread-badge').textContent = c > 99 ? '99+' : c;
+}
+
+function renderHero(isNew, authed) {
+  const hero = $('hero');
+  if (!authed) {
+    hero.className = 'empty-hero';
+    hero.innerHTML = `<div class="head" style="justify-content:center"><div>
+      <div class="h-title">Chưa đăng nhập</div>
+      <div class="h-body">Đăng nhập (👤 góc phải) để xem thông báo.</div></div></div>`;
+    return;
+  }
+  const n = liveItems[0];
+  if (!n) {
+    hero.className = 'empty-hero';
+    hero.innerHTML = `<div class="head" style="justify-content:center"><div>
+      <div class="h-title">Chưa có thông báo</div>
+      <div class="h-body">Thông báo mới sẽ hiện ở đây theo thời gian thực.</div></div></div>`;
+    return;
+  }
+  hero.className = `sev-${n.severity}` + (isNew ? ' flash' : '');
+  const bits = [];
+  if (n.sevRaw != null) bits.push(`<span class="sev-badge" style="background:${SEV_COLOR[n.severity]}">${esc(SEV_LABEL[n.severity])}</span>`);
+  if (n.deviceId) bits.push(`<span>${esc(n.deviceId)}</span>`);
+  bits.push(`<span>${timeAgo(n.createdAt)}</span>`);
+  hero.innerHTML = `
+    <div class="head">
+      <div class="h-icon">${TYPE_ICON[n.type] || '🔔'}</div>
+      <div style="flex:1;min-width:0">
+        <div class="h-title">${esc(n.title)}</div>
+        ${n.body ? `<div class="h-body">${esc(n.body)}</div>` : ''}
+        <div class="h-meta">${bits.join('')}</div>
+      </div>
+    </div>`;
+  if (isNew) setTimeout(() => hero.classList.remove('flash'), 600);
+}
+
+// Dựng 1 thẻ thông báo (dùng chung cho dropdown + 2 tin nhỏ dưới hero)
+function notiEl(n) {
+  const el = document.createElement('div');
+  el.className = `noti sev-${n.severity}${n.isRead ? '' : ' unread'}`;
+  el.innerHTML = `
+    <div class="icon">${TYPE_ICON[n.type] || '🔔'}</div>
+    <div class="content">
+      <div class="title"><span>${esc(n.title)}</span>${n.isRead ? '' : '<span class="dot"></span>'}</div>
+      ${n.body ? `<div class="body">${esc(n.body)}</div>` : ''}
+      <div class="meta">${n.deviceId ? esc(n.deviceId) + ' · ' : ''}${timeAgo(n.createdAt)}</div>
+    </div>`;
+  el.onclick = () => markReadLive(n._mid);
+  return el;
+}
+
+function renderDropdownList(authed) {
+  const list = $('dropdown-list');
+  if (!authed) {
+    list.innerHTML = '<div class="empty">Đăng nhập để xem thông báo.</div>';
+    return;
+  }
+  if (!liveItems.length) {
+    list.innerHTML = '<div class="empty">Chưa có thông báo nào.<br>Khi hệ thống phát cảnh báo, nó sẽ hiện ở đây.</div>';
+    return;
+  }
+  list.innerHTML = '';
+  liveItems.forEach(n => list.appendChild(notiEl(n)));
+}
+
+// 2 tin nhỏ ngay bên dưới hero (tin gần đây thứ 2 và 3)
+function renderRecent(authed) {
+  const box = $('recent-mini');
+  box.innerHTML = '';
+  if (!authed) return;
+  liveItems.slice(1, 3).forEach(n => box.appendChild(notiEl(n)));
+}
+
+// ── Tài khoản: form đăng nhập / phiên ─────────────────────────────────────────
+function renderUserDropdown() {
+  const body = $('user-body');
+  if (jwt()) {
+    const claims = parseJwt(authToken) || {};
+    const deviceId = claims.deviceId || '';
+    body.innerHTML = `
+      <div class="session-row">
+        <span class="user-tag">👤 ${esc(cfg.username || 'user')} · ${esc(deviceId || '(chưa gắn thiết bị)')}</span>
+      </div>
+      <button class="btn ghost" id="btn-push">🔔 Bật nhận push</button>
+      <button class="btn ghost" id="btn-logout">Đăng xuất</button>
+      <div class="fcm-state" id="fcm-state">Push: chưa bật</div>`;
+    $('btn-push').onclick = () => enablePush();
+    $('btn-logout').onclick = () => logout();
+  } else {
+    body.innerHTML = `
+      <label>Notification Service URL</label>
+      <input id="cfg-server" value="${esc(cfg.server || 'http://localhost:3001')}" />
+      <label>Tài khoản</label>
+      <input id="cfg-username" value="${esc(cfg.username || 'demo')}" autocomplete="username" />
+      <label>Mật khẩu</label>
+      <input id="cfg-password" type="password" value="demo1234" autocomplete="current-password" />
+      <button class="btn" id="btn-login">Đăng nhập</button>`;
+    $('btn-login').onclick = () => login();
+    $('cfg-password').onkeydown = (e) => { if (e.key === 'Enter') login(); };
+  }
+}
+
+function updateUserLabel() {
+  if (jwt()) {
+    const claims = parseJwt(authToken) || {};
+    $('user-label').textContent = `${cfg.username || 'user'} · ${claims.deviceId || ''}`;
+  } else {
+    $('user-label').textContent = 'Đăng nhập';
+  }
+}
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+async function login() {
+  const server = ($('cfg-server').value || 'http://localhost:3001').replace(/\/$/, '');
+  const username = $('cfg-username').value.trim();
+  const password = $('cfg-password').value;
+  if (!username || !password) return toast('Thiếu thông tin', 'Nhập tài khoản và mật khẩu.');
+  try {
+    const r = await fetch(`${server}/api/v1/auth/login`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    const json = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(json.message || `HTTP ${r.status}`);
+    authToken = json.token;
+    cfg.server = server; cfg.username = json.user?.username || username; cfg.token = authToken;
+    localStorage.setItem('notiweb-config', JSON.stringify(cfg));
+    updateUserLabel(); renderUserDropdown(); renderAll();
+    toast('Đã đăng nhập', `${cfg.username}`);
+    if (Notification.permission === 'granted') enablePush(true);
+  } catch (e) { toast('Đăng nhập lỗi', e.message); }
+}
+
+async function logout() {
+  try {
+    if (messaging) {
+      const t = await messaging.getToken({ vapidKey: VAPID_KEY }).catch(() => null);
+      if (t) await api('/token', { method: 'DELETE', body: JSON.stringify({ token: t }) }).catch(() => {});
+    }
+  } catch {}
+  resetSession();
+}
+function resetSession() {
+  authToken = ''; delete cfg.token;
+  localStorage.setItem('notiweb-config', JSON.stringify(cfg));
+  updateUserLabel(); renderUserDropdown(); renderAll();
+}
+
+// ── Push (FCM) ────────────────────────────────────────────────────────────────
+async function enablePush(silent = false) {
+  if (!jwt()) return toast('Chưa đăng nhập', 'Đăng nhập trước khi bật nhận push.');
+  try {
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') return toast('Bị từ chối', 'Browser không cho phép hiện thông báo.');
+    if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+    messaging = firebase.messaging();
+    const swReg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+    const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
+    await api('/token', { method: 'POST', body: JSON.stringify({ token, device: 'web' }) });
+    messaging.onMessage(payload => handleIncoming(payload));
+    const st = $('fcm-state'); if (st) { st.textContent = 'Push: đang bật'; st.className = 'fcm-state on'; }
+    if (!silent) toast('Sẵn sàng 🔔', 'Đã đăng ký nhận cảnh báo.');
+  } catch (e) { toast('Lỗi bật push', e.message); }
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
 if (cfg.token) {
   const claims = parseJwt(cfg.token);
   if (claims && (!claims.exp || claims.exp * 1000 > Date.now())) {
     authToken = cfg.token;
-    onLoggedIn();
-    refresh();
     if (Notification.permission === 'granted') enablePush(true);
-  } else {
-    localStorage.removeItem('notiweb-config');
-  }
+  } else { delete cfg.token; localStorage.setItem('notiweb-config', JSON.stringify(cfg)); }
 }
 
-// Quay lại tab → cập nhật (push background chỉ hiện system-notification, không chạy JS trong tab)
-window.addEventListener('focus', () => { if (jwt()) refresh(); });
-setInterval(() => { if (jwt() && !document.hidden) refresh(); }, 30000);
+// Nhận message từ service worker (khi tab ở chế độ nền)
+if (navigator.serviceWorker) {
+  navigator.serviceWorker.addEventListener('message', e => {
+    if (e.data && e.data.type === 'fcm') handleIncoming(e.data.payload);
+  });
+}
+
+updateUserLabel();
+renderAll();
 </script>
 </body>
 </html>

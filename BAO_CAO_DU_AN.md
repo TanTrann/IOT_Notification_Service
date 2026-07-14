@@ -4,195 +4,144 @@
 
 Tên dự án: IOT Notification Service
 Thuộc hệ thống: SmartFarm — Giám sát và điều khiển cây trồng thông minh
-Người phụ trách module: Tân Trần
+Người phụ trách module: Tân Trần — phần **Push Notification với Firebase**
 
-IOT Notification Service là một microservice trong hệ thống SmartFarm. Nhiệm vụ chính là nhận sự kiện từ thiết bị IoT, xử lý thành thông báo có nghĩa và gửi push notification đến điện thoại hoặc trình duyệt của người dùng thông qua Firebase Cloud Messaging (FCM).
+IOT Notification Service là một microservice trong hệ thống SmartFarm. Nhiệm vụ chính là nhận thông báo do MCP Server sinh ra và **đẩy push notification qua Firebase Cloud Messaging (FCM)** tới màn hình/thiết bị người dùng — hiển thị đúng nguyên nội dung, kể cả khi trang/ứng dụng đang đóng.
 
 
 ## Bối Cảnh và Vấn Đề Cần Giải Quyết
 
-Hệ thống SmartFarm theo dõi cây trồng tự động 24/7. Khi có sự kiện bất thường như cây thiếu nước, mắc bệnh, thiếu dinh dưỡng — người dùng cần được thông báo ngay lập tức dù không đang mở ứng dụng.
+Hệ thống SmartFarm theo dõi cây trồng tự động 24/7. Khi có sự kiện đáng chú ý — cây thiếu nước, nhiệt độ vượt ngưỡng, phát hiện bệnh, thiết bị mất kết nối — người dùng cần được thông báo ngay.
 
 Vấn đề cần giải quyết:
-- Thiết bị IoT phát sự kiện liên tục nhưng người dùng không thể theo dõi màn hình mọi lúc
-- Cần cầu nối từ phần cứng IoT đến ứng dụng người dùng
-- Tránh gửi thông báo trùng lặp gây phiền nhiễu
-- Lưu lịch sử thông báo để người dùng xem lại
+- Cần một cầu nối trung thực từ nơi sinh thông báo (MCP Server) tới màn hình hiển thị.
+- Thông báo phải hiển thị **realtime** và **đánh thức được** kể cả khi màn hình/ứng dụng không ở tiền cảnh → dùng Firebase push.
+- Nội dung thông báo do MCP quyết định — service không tự diễn giải lại, tránh sai lệch.
+
+Trong dự án, use-case cụ thể: mỗi cây trồng bằng AI có một **màn hình web (kiosk) đặt cạnh cây** để hiển thị thông báo.
 
 
 ## Kiến Trúc Tổng Thể Hệ Thống SmartFarm
 
-Hệ thống SmartFarm gồm 5 thành viên, mỗi người phụ trách một module:
+Hệ thống SmartFarm gồm nhiều thành viên:
 
-Nhường phụ trách phần cứng IoT, thiết kế mạch và thu thập dữ liệu cảm biến như nhiệt độ, độ ẩm, ánh sáng.
+- **Nhường** — phần cứng IoT, mạch và cảm biến (nhiệt độ, độ ẩm, ánh sáng).
+- **Lĩnh** — AI Server, phân tích tình trạng cây.
+- **Phong** — Server điều khiển (.NET) và **MCP Server**: nhận dữ liệu, ra quyết định và **sinh thông báo**.
+- **Tân** — **Push Notification Service (Firebase)**: nhận thông báo từ MCP và đẩy push tới người dùng.
+- **Thịnh** — Website quản lý SmartFarm.
 
-Lĩnh phụ trách AI Server, nhận dữ liệu từ cảm biến và phân tích để xác định tình trạng cây: bệnh, thiếu nước, thiếu dinh dưỡng, thiếu ánh sáng.
+Luồng dữ liệu (mô hình hiện tại):
 
-Phong phụ trách server điều khiển (.NET) và MCP Server, nhận dữ liệu cảm biến và tự động ra lệnh điều khiển phần cứng như bật đèn, tưới nước theo rule.
+```
+MCP Server (Phong) ─publish JSON─► HiveMQ (planttree/{deviceId}/notifications) ─► Notification Service ─FCM─► Màn hình web kiosk cạnh cây
+```
 
-Tân phụ trách Push Notification Service, lắng nghe dữ liệu cảm biến thô và lệnh điều khiển trên MQTT broker, tự phân tích thành thông báo và đẩy đến thiết bị người dùng.
+Điểm thiết kế quan trọng: MCP Server chỉ cần **publish một JSON bất kỳ** lên topic `planttree/{deviceId}/notifications` (song song với `sensors`/`commands` sẵn có của Phong). Notification Service **không dịch, không biến đổi** — broadcast nguyên nội dung qua Firebase tới các client đã đăng ký.
 
-Thịnh phụ trách Website quản lý SmartFarm, hiển thị thông số và lịch sử thông báo cho người dùng.
-
-Luồng dữ liệu: Cảm biến IoT (ESP32) → MQTT Broker (HiveMQ Cloud) → Notification Service (tự so ngưỡng / dịch lệnh) → Firebase FCM → Ứng dụng người dùng.
-
-Điểm thiết kế quan trọng: Notification Service "nghe ké" cùng broker với hệ thống của Phong (2 topic xmini/sensor_data và xmini/control), tự suy ra sự kiện đáng báo từ dữ liệu thô — các module khác không cần thay đổi hay tích hợp gì thêm.
+> **Ghi chú tiến hoá:** phiên bản đầu của service tự "nghe ké" dữ liệu cảm biến (`xmini/sensor_data`, `xmini/control`), so ngưỡng và dịch lệnh thành thông báo. Sau đó dự án chuyển sang mô hình trung thực hơn: **MCP tự sinh thông báo, service chỉ đẩy push qua Firebase**. Các luồng dịch/so ngưỡng và kênh SSE trung gian đã được gỡ bỏ.
 
 
 ## Công Nghệ Sử Dụng
 
-Ngôn ngữ lập trình: Node.js với cú pháp ES6 Modules
-Framework backend: Express.js phiên bản 4.19
-Cơ sở dữ liệu: MongoDB thông qua thư viện Mongoose
-Giao thức nhận sự kiện: MQTT — giao thức nhắn tin nhẹ cho IoT
-Dịch vụ thông báo đẩy: Firebase Admin SDK phiên bản 12
-Xác thực người dùng: JSON Web Token (JWT)
-Bảo mật: Helmet và CORS middleware
-MQTT Broker: HiveMQ Cloud (TLS 8883, dùng chung với hệ của Phong)
-Client web: HTML/JS thuần + Firebase SDK (notification-web, test-client)
-Client mobile: React Native + Expo SDK 54 — Android (notification-app)
+- Ngôn ngữ: Node.js (ES6 Modules)
+- Framework backend: Express.js 4.19
+- Cơ sở dữ liệu: MongoDB qua Mongoose (lưu FCM token)
+- Giao thức nhận thông báo: MQTT (HiveMQ Cloud, TLS 8883, dùng chung broker với hệ của Phong)
+- **Dịch vụ push: Firebase Admin SDK 12 (FCM)** — trọng tâm module
+- Client màn hình: HTML/JS + **Firebase JS SDK (Web Push)** (notification-web)
+- Xác thực: API key cho endpoint nội bộ (`/internal/*`); JWT cho REST người dùng (`/api/v1/*`)
+- Bảo mật: Helmet và CORS middleware
 
 
 ## Chức Năng Chính
 
-Nhận dữ liệu IoT qua MQTT: Service lắng nghe 2 topic — xmini/sensor_data (số đo cảm biến thô từ ESP32) và xmini/control (lệnh tự động từ server .NET của Phong).
+**Nhận thông báo qua MQTT:** Service subscribe `planttree/+/notifications` (cấu hình qua `MQTT_NOTIFICATION_TOPIC`), bóc `deviceId` từ topic. MCP Server publish JSON lên `planttree/{deviceId}/notifications`.
 
-Tự so ngưỡng cảnh báo: Số đo cảm biến được so với ngưỡng cấu hình (độ ẩm đất dưới 30%, nhiệt độ trên 35°C, ánh sáng dưới 25 lux) để sinh cảnh báo, ví dụ "Cây đang thiếu nước — Độ ẩm đất 22% đã xuống dưới ngưỡng 30%".
+**Chuyển tiếp trung thực (không dịch):** Service giữ nguyên payload, chỉ bóc mềm dẻo các field `title`/`body`/`severity`/`type` để đặt tiêu đề/nội dung push cho đẹp; không field nào bắt buộc.
 
-Chống spam bằng edge-detection: Chỉ báo khi chỉ số chuyển trạng thái (tốt sang xấu báo một lần, hồi phục báo "đã ổn định" một lần) — cảm biến gửi liên tục vài giây một lần cũng không gây dội thông báo.
+**Push qua Firebase (broadcast):** Mỗi tin được gửi tới **tất cả** thiết bị đã đăng ký token (`fcmService.sendToAll`) — mô hình "ai đăng ký cũng nhận". Push nổ cả khi trang/ứng dụng đóng. Token không còn hợp lệ được tự động xóa.
 
-Dịch lệnh điều khiển thành thông báo: Lệnh WATER_ON, LIGHT_ON... được dịch sang câu dễ hiểu kèm chi tiết, ví dụ "Đã tự động tưới nước (độ ẩm hiện tại 22%, trong 5 giây)". Payload lệnh không chứa device_id nên service tự suy ra từ bản tin cảm biến gần nhất.
+**Đăng ký thiết bị nhận push:** Client đăng ký FCM registration token qua `POST /internal/push/token` (API key) hoặc `POST /api/v1/notifications/token` (JWT).
 
-Lưu trữ thông báo: Mỗi thông báo được lưu vào MongoDB kèm loại, mức độ nghiêm trọng và trạng thái đã đọc hay chưa.
+**Hiển thị trên màn hình kiosk (Firebase Web Push):** Trang `notification-web` mở full-screen cạnh cây; nhận message qua `messaging.onMessage` và **dựng danh sách realtime ngay trong trang**; service worker hiển thị khi tab đóng.
 
-Gửi push notification: Tự động gửi thông báo đến tất cả thiết bị đã đăng ký của người dùng qua Firebase FCM, hỗ trợ web, Android và iOS.
-
-API quản lý thông báo: Cung cấp REST API để lấy danh sách thông báo, đánh dấu đã đọc, đếm số chưa đọc.
-
-Chống thông báo trùng lặp: Mỗi sự kiện có ID duy nhất, hệ thống bỏ qua nếu đã xử lý trước đó.
-
-
-## Các Loại Thông Báo
-
-Thông báo bệnh cây (disease): Khi AI phát hiện dấu hiệu bệnh trên cây trồng. Mức độ: nguy cấp hoặc cảnh báo.
-
-Thông báo tưới nước (water): Khi cây thiếu nước hoặc hệ thống tự động tưới. Mức độ: cảnh báo hoặc thông tin.
-
-Thông báo dinh dưỡng (nutrition): Khi cây thiếu chất dinh dưỡng. Mức độ: cảnh báo.
-
-Thông báo nhiệt độ (temperature): Khi nhiệt độ vượt ngưỡng hoặc hạ về bình thường. Mức độ: cảnh báo hoặc thông tin.
-
-Thông báo ánh sáng (light): Khi cây thiếu hoặc thừa ánh sáng. Mức độ: thông tin.
-
-Thông báo hệ thống (system): Khi thiết bị kết nối, ngắt kết nối hoặc lỗi. Mức độ: thông tin.
-
-Ba mức độ nghiêm trọng: Critical (nguy cấp), Warning (cảnh báo), Info (thông tin).
+**REST cho web (đọc lịch sử):** `/api/v1/notifications` vẫn cung cấp danh sách/đã đọc cho website (JWT) — dùng khi cần lịch sử bền vững từ DB.
 
 
 ## Luồng Xử Lý Thông Báo
 
-Bước 1 — Nhận dữ liệu: Thiết bị ESP32 publish số đo cảm biến lên topic "xmini/sensor_data"; server .NET của Phong publish lệnh tự động lên topic "xmini/control". Service subscribe cả hai.
+Bước 1 — Nhận: MCP Server publish JSON lên `planttree/{deviceId}/notifications`. Service subscribe, bóc `deviceId` từ topic và parse JSON.
 
-Bước 2 — Phân tích: MQTT Handler parse JSON và điều phối theo topic — số đo cảm biến sang hàm so ngưỡng, lệnh điều khiển sang hàm dịch lệnh.
+Bước 2 — Đẩy push: `fcmService.sendToAll` tra tất cả token trong DB và gửi push song song qua Firebase.
 
-Bước 3 — Sinh thông báo: Event Translator so số đo với ngưỡng (kèm edge-detection chống spam) hoặc ánh xạ lệnh sang tiêu đề và nội dung tiếng Việt dễ hiểu.
-
-Bước 4 — Lưu vào cơ sở dữ liệu: Notification Service lưu thông báo vào MongoDB. Nếu eventId đã tồn tại (trùng lặp) thì dừng, không gửi FCM.
-
-Bước 5 — Gửi push notification: FCM Service tra cứu tất cả FCM token của thiết bị đó và gửi notification đến từng token qua Firebase.
-
-Bước 6 — Người dùng nhận thông báo: Thiết bị người dùng nhận notification từ Firebase, hiển thị trên màn hình dù app đang đóng.
+Bước 3 — Người dùng nhận: màn hình web mở → `onMessage` hiện tin ngay trong danh sách; màn/tab đóng → notification hệ thống hiển thị (Firebase Web Push + service worker).
 
 
 ## Mô Hình Dữ Liệu
 
-Bảng Notification lưu trữ:
-- eventId: ID duy nhất để chống trùng lặp
-- deviceId: ID của thiết bị IoT gửi sự kiện
-- title: Tiêu đề thông báo
-- body: Nội dung chi tiết
-- type: Loại thông báo (disease, water, nutrition, light, temperature, system)
-- severity: Mức độ nghiêm trọng (critical, warning, info)
-- isRead: Trạng thái đã đọc hay chưa
-- createdAt: Thời gian tạo
+Collection `fcmtokens` (đang dùng đầy đủ):
+- deviceId: định danh nhóm nhận (client nội bộ dùng `'broadcast'`)
+- token: FCM registration token (unique)
+- device: loại client (web, android, ios)
 
-Bảng FCMToken lưu trữ:
-- deviceId: ID thiết bị hoặc người dùng
-- token: FCM registration token từ trình duyệt hoặc app
-- device: Loại client (web, android, ios)
+Collection `notifications` (chỉ phục vụ REST đọc của web):
+- eventId, deviceId, title, body, type, severity, isRead, createdAt
+- Lưu ý: luồng MQTT hiện **không ghi** vào collection này (màn hình dựng danh sách realtime từ chính message FCM). REST danh sách sẽ rỗng trừ khi bật lại ghi DB.
 
 
-## REST API
+## REST API và Endpoint Nội Bộ
 
-API đăng ký FCM token: POST /api/v1/notifications/token — Thiết bị client gửi FCM token khi khởi động để nhận được notification về sau.
+Endpoint nội bộ (`/internal/*`, xác thực **API key**):
+- `POST` / `DELETE /internal/push/token` — đăng ký / hủy FCM token.
 
-API lấy danh sách thông báo: GET /api/v1/notifications — Trả về danh sách thông báo có phân trang, kèm số lượng chưa đọc.
+REST người dùng (`/api/v1/*`, xác thực **JWT**):
+- `POST /api/v1/auth/login` — đăng nhập, cấp JWT.
+- `GET /api/v1/notifications` — danh sách + đếm chưa đọc.
+- `GET /api/v1/notifications/unread-count` — đếm chưa đọc.
+- `PATCH /api/v1/notifications/:id/read` và `/read-all` — đánh dấu đã đọc.
+- `POST` / `DELETE /api/v1/notifications/token` — đăng ký / hủy FCM token cho web.
 
-API đếm chưa đọc: GET /api/v1/notifications/unread-count — Trả về số thông báo chưa đọc để hiển thị badge trên UI.
-
-API đánh dấu đã đọc: PATCH /api/v1/notifications/:id/read — Đánh dấu một thông báo cụ thể là đã đọc.
-
-API đánh dấu tất cả đã đọc: PATCH /api/v1/notifications/read-all — Xóa toàn bộ badge thông báo.
-
-API health check: GET /health — Kiểm tra service có đang hoạt động không.
-
-Tất cả API quản lý thông báo yêu cầu JWT Bearer token trong header để xác thực người dùng.
+Khác: `GET /health` — kiểm tra service.
 
 
 ## Tính Năng Kỹ Thuật Nổi Bật
 
-Chống thông báo trùng lặp: Sử dụng unique sparse index trên MongoDB cho trường eventId (lấy từ commandId của lệnh). Khi broker phát lại cùng một lệnh (QoS 1), hệ thống nhận ra và bỏ qua, không gửi FCM lần thứ hai.
+**Firebase là trung tâm:** toàn bộ thông báo đi qua FCM — đúng phần việc "Push Notification với Firebase".
 
-Chống spam bằng edge-detection: Lưu trạng thái tốt/xấu của từng chỉ số theo thiết bị; chỉ thông báo tại thời điểm chuyển trạng thái nên cảm biến gửi dữ liệu liên tục cũng không làm phiền người dùng.
+**Chuyển tiếp trung thực:** hiển thị đúng nguyên JSON MCP gửi; client luôn có thể xem dữ liệu gốc.
 
-Không xâm lấn hệ thống hiện có: Service chỉ subscribe thêm vào broker sẵn có của Phong và tự phân tích dữ liệu thô — phần cứng và server điều khiển không phải sửa dòng code nào.
+**Broadcast đơn giản:** "ai đăng ký cũng nhận" (`sendToAll`), dễ thêm client mới. Có thể nâng cấp thành targeting theo `deviceId` (đã bóc sẵn từ topic) bằng `sendToUser`.
 
-Hỗ trợ nhiều thiết bị cùng lúc: Một người dùng có thể đăng ký nhiều FCM token từ điện thoại, máy tính bảng, trình duyệt. Khi có sự kiện, tất cả thiết bị đều nhận được thông báo đồng thời.
+**Web Push cho màn kiosk:** dùng Firebase JS SDK — `onMessage` hiện realtime khi trang mở, service worker hiện khi trang đóng; không cần kênh trung gian.
 
-Tự động phục hồi kết nối: MQTT client tự động kết nối lại mỗi 5 giây nếu mất kết nối. Service không bị crash khi broker tạm thời ngắt.
+**FCM best-effort:** lỗi gửi push không làm gãy luồng; token chết tự bị xóa khỏi DB.
 
-Khởi động an toàn: Service vẫn chạy bình thường dù Firebase, MQTT hoặc MongoDB chưa kết nối. Ghi log cảnh báo và tiếp tục thay vì dừng hẳn.
+**Tự động phục hồi kết nối:** MQTT client tự reconnect mỗi 5 giây; service không crash khi broker tạm ngắt.
 
-Hỗ trợ thông báo nền: Tích hợp Firebase Service Worker cho phép người dùng nhận notification ngay cả khi trình duyệt đang đóng hoặc app đang chạy nền.
+**Khởi động an toàn:** service vẫn chạy dù thiếu Firebase, MQTT hoặc MongoDB — ghi log cảnh báo và tiếp tục.
 
 
 ## Kết Quả Đạt Được
 
-Service hoạt động ổn định, nhận và xử lý sự kiện từ MQTT thành công.
-
-Tích hợp thành công với Firebase FCM, gửi push notification đến trình duyệt web.
-
-API đầy đủ để website của Thịnh lấy danh sách thông báo và quản lý trạng thái đọc.
-
-Cơ chế chống trùng lặp và edge-detection hoạt động đúng, không gây spam thông báo (đã kiểm chứng end-to-end qua HiveMQ Cloud thật).
-
-Giao diện test client (test-client/) giả lập được cả ESP32 lẫn server .NET của Phong, kiểm thử toàn bộ luồng end-to-end mà không cần phần cứng thật.
-
-Web nhận thông báo cho người dùng cuối (notification-web/): trung tâm thông báo với push realtime, danh sách lịch sử, đánh dấu đã đọc và badge đếm chưa đọc.
-
-App mobile Android (notification-app/, React Native + Expo): cùng tính năng với web nhưng nhận push FCM native — app đóng vẫn nhận notification hệ thống. Backend không phải sửa gì: app dùng đúng FCM registration token và API sẵn có (device: android).
+- Service nhận thông báo từ `planttree/{deviceId}/notifications` và broadcast push qua Firebase tới client.
+- Tích hợp Firebase FCM thành công: push nổ tới màn hình/thiết bị kể cả khi trang đóng.
+- Màn hình kiosk web (notification-web): mở full-screen cạnh cây, nhận qua Firebase Web Push và hiển thị danh sách realtime.
+- Có script `scripts/publish-test.js` giả lập MCP bắn thông báo lên `planttree/{deviceId}/notifications` để kiểm thử end-to-end.
 
 
 ## Hướng Phát Triển Tiếp Theo
 
-Tích hợp sâu hơn với MCP Server để hỗ trợ thêm loại sự kiện mới khi AI phát hiện thêm bệnh cây.
-
-Thêm rate limiting để giới hạn số thông báo mỗi giờ, tránh làm phiền người dùng.
-
-Xây dựng hàng đợi gửi lại khi Firebase tạm thời không khả dụng.
-
-Thêm thống kê tỷ lệ mở thông báo để cải thiện nội dung.
-
-Hỗ trợ đa ngôn ngữ cho thông báo theo cài đặt của người dùng.
-
-Nâng cấp app mobile lên New Architecture của React Native (hiện tắt để build được trên Windows — Expo SDK 55 sẽ bắt buộc) và bổ sung bản iOS.
+- Phối hợp với Phong để MCP/server publish `planttree/{deviceId}/notifications` khi có sự kiện (điểm ráp nối production).
+- Push targeting theo `deviceId` (mỗi người/vườn chỉ nhận thông báo của mình) bằng `sendToUser`.
+- Tùy chọn ghi lại thông báo vào MongoDB để có lịch sử bền vững.
+- Hàng đợi gửi lại khi Firebase tạm thời không khả dụng; rate limiting tránh dội thông báo.
+- Bản app điện thoại (Android/iOS) nhận cùng FCM nếu cần push cho người dùng khi rời màn hình.
 
 
 ## Kết Luận
 
-IOT Notification Service hoàn thành vai trò cầu nối quan trọng trong hệ sinh thái SmartFarm. Service chuyển đổi dữ liệu kỹ thuật từ phần cứng IoT thành thông báo thân thiện, đảm bảo người dùng luôn được cập nhật tình trạng cây trồng kịp thời dù không mở ứng dụng.
+IOT Notification Service đảm nhiệm phần **Push Notification với Firebase** của SmartFarm: nhận thông báo do MCP Server sinh ra và đẩy qua FCM tới màn hình kiosk cạnh cây (Firebase Web Push), hiển thị đúng nguyên nội dung, kể cả khi trang đóng. Mô hình "không dịch, chỉ đẩy push" giúp service đơn giản, dễ bảo trì và dễ mở rộng thêm client.
 
-Với kiến trúc microservice độc lập, service dễ bảo trì, mở rộng và tích hợp với các module khác trong hệ thống mà không ảnh hưởng lẫn nhau.
-
-Công nghệ sử dụng: Node.js, Express, MongoDB, MQTT, Firebase FCM, JWT, React Native (Expo).
+Công nghệ sử dụng: Node.js, Express, MongoDB, MQTT, Firebase FCM, JWT.
 Người phụ trách: Tân Trần — tan.tran@treehousei.com

@@ -1,96 +1,64 @@
 import { connectMQTT } from '../config/mqtt.js';
-import notificationService from './notificationService.js';
-import { evaluateSensorData, translateControl } from './eventTranslator.js';
+import fcmService from './fcmService.js';
 
-// Nghe ké traffic IoT trên broker HiveMQ Cloud → dịch → notification → FCM.
-// Hỗ trợ 2 HỌ TOPIC giống server .NET của Phong (PlantTreeIoTServer/MqttBackgroundService.cs):
-//   • xmini/sensor_data + xmini/control           — payload snake_case; control KHÔNG có device_id
-//   • planttree/{deviceId}/sensors + .../commands — payload camelCase; deviceId nằm TRONG topic
-
-const PLANTTREE_SENSORS  = 'planttree/+/sensors';
-const PLANTTREE_COMMANDS = 'planttree/+/commands';
+// Nghe thông báo do server/MCP của Phong phát, theo cấu trúc SONG SONG với sensors/commands:
+//   planttree/{deviceId}/sensors        (số đo   — Phong publish, thiết bị nghe)
+//   planttree/{deviceId}/commands       (lệnh    — Phong publish, thiết bị nghe)
+//   planttree/{deviceId}/notifications  (thông báo — Phong publish, SERVICE NÀY nghe) ◄──
+//
+// deviceId nằm TRONG topic. Service KHÔNG dịch/biến đổi payload — mỗi tin nhận được sẽ
+// broadcast qua Firebase (FCM) tới mọi thiết bị đã đăng ký (web/app), nổ cả khi tab/app đóng.
+const DEFAULT_TOPIC = 'planttree/+/notifications';
 
 export function startMQTTListener() {
   const client = connectMQTT();
   if (!client) return;
 
-  const sensorTopic  = process.env.MQTT_SENSOR_TOPIC  || 'xmini/sensor_data';
-  const controlTopic = process.env.MQTT_CONTROL_TOPIC || 'xmini/control';
-
-  // xmini/control KHÔNG có device_id → nhớ device của bản tin sensor gần nhất để gán cho lệnh.
-  // (Nhánh planttree lấy deviceId thẳng từ topic nên KHÔNG cần suy đoán — hết mơ hồ đa thiết bị.)
-  let lastSensorDeviceId = process.env.DEFAULT_DEVICE_ID || null;
+  const topicFilter = process.env.MQTT_NOTIFICATION_TOPIC || DEFAULT_TOPIC;
 
   client.on('connect', () => {
-    const topics = [sensorTopic, controlTopic, PLANTTREE_SENSORS, PLANTTREE_COMMANDS];
-    client.subscribe(topics, { qos: 1 }, (err, granted) => {
+    client.subscribe(topicFilter, { qos: 1 }, (err, granted) => {
       if (err) return console.error('MQTT subscribe error:', err.message);
       console.log('MQTT subscribed:', granted.map(g => g.topic).join(', '));
     });
   });
 
-  client.on('message', async (topic, payload) => {
+  client.on('message', (topic, payload) => {
+    const raw = payload.toString();
     let data;
     try {
-      data = JSON.parse(payload.toString());
+      data = JSON.parse(raw);
     } catch {
-      console.error('MQTT: payload không phải JSON hợp lệ:', payload.toString());
-      return;
+      data = { message: raw };   // không phải JSON → vẫn hiển thị dạng text thô
+    }
+    if (data === null || typeof data !== 'object' || Array.isArray(data)) {
+      data = { message: raw };
     }
 
-    try {
-      const res = routeMessage(topic, data, { sensorTopic, controlTopic, lastSensorDeviceId });
-      lastSensorDeviceId = res.lastSensorDeviceId;
-      if (!res.notes.length && (topic === controlTopic || topic.endsWith('/commands'))) {
-        console.warn(`MQTT: bỏ qua lệnh trên "${topic}" (thiếu command hoặc chưa biết deviceId):`, payload.toString());
-      }
-      for (const n of res.notes) await notificationService.notify(n);
-    } catch (err) {
-      console.error(`MQTT: lỗi xử lý message trên "${topic}":`, err.message);
-    }
+    // Bóc deviceId từ topic: planttree/{deviceId}/notifications
+    const parts = topic.split('/');
+    const deviceId = parts.length >= 3 ? parts[1] : null;
+
+    broadcastPush(data, deviceId)
+      .then(() => console.log(`MQTT "${topic}" → FCM broadcast`))
+      .catch(err => console.error('FCM broadcast lỗi:', err.message));
   });
 }
 
-// Định tuyến 1 message → danh sách notification. Hàm THUẦN (không I/O) để test dễ.
-// Trả về { notes, lastSensorDeviceId } — lastSensorDeviceId có thể cập nhật khi gặp bản tin sensor.
-export function routeMessage(topic, data, { sensorTopic, controlTopic, lastSensorDeviceId }) {
-  let notes = [];
+// Bóc title/body để hiển thị đẹp trên khay/thông báo; payload gốc gửi kèm trong `data.raw`.
+const pick = (o, keys) => { for (const k of keys) if (o?.[k] != null && o[k] !== '') return o[k]; return undefined; };
 
-  if (topic === sensorTopic) {
-    // xmini: số đo snake_case, device_id trong payload
-    if (data.device_id) lastSensorDeviceId = data.device_id;
-    notes = evaluateSensorData(data);
-  } else if (topic === controlTopic) {
-    // xmini: lệnh không có device_id → gán cho device sensor gần nhất
-    const n = translateControl(data, lastSensorDeviceId);
-    if (n) notes = [n];
-  } else {
-    // planttree/{deviceId}/{sensors|commands} — deviceId nằm trong topic
-    const [root, deviceId, kind] = topic.split('/');
-    if (root === 'planttree' && deviceId) {
-      if (kind === 'sensors') {
-        lastSensorDeviceId = deviceId;
-        notes = evaluateSensorData(normalizePlanttreeSensor(deviceId, data));
-      } else if (kind === 'commands') {
-        const n = translateControl(data, deviceId);   // deviceId chắc chắn (từ topic)
-        if (n) notes = [n];
-      }
-    }
-  }
-
-  return { notes, lastSensorDeviceId };
-}
-
-// Payload planttree dùng camelCase (temperature/humidity/soilMoisture/lightLevel — xem
-// esp32-mqtt-client.ino của Phong). Map về đúng field mà evaluateSensorData đọc (dạng xmini),
-// giữ nguyên payload gốc trong `data` của notification.
-export function normalizePlanttreeSensor(deviceId, d) {
-  return {
-    ...d,
-    device_id:             deviceId,
-    temperature_c:         d.temperature,
-    humidity_percent:      d.humidity,
-    soil_moisture_percent: d.soilMoisture,
-    light_lux:             d.lightLevel,
-  };
+async function broadcastPush(payload, deviceId) {
+  const title = pick(payload, ['title', 'tieu_de', 'name', 'event']) ?? 'Thông báo SmartFarm';
+  const body  = pick(payload, ['body', 'message', 'msg', 'content', 'noi_dung', 'description']) ?? '';
+  const type     = pick(payload, ['type', 'category', 'loai']);
+  const severity = pick(payload, ['severity', 'level', 'muc_do', 'priority']);
+  // Hiện broadcast tới TẤT CẢ token (mô hình demo). Để push đúng theo deviceId (targeting),
+  // cho client đăng ký token kèm deviceId thật rồi đổi sang fcmService.sendToUser(deviceId, ...).
+  await fcmService.sendToAll({
+    title: String(title),
+    body:  String(body),
+    // FCM ép mọi field data về string; gửi kèm deviceId + payload gốc để client dùng nếu cần
+    data: { deviceId: deviceId ?? '', type: type ?? '', severity: severity ?? '', raw: JSON.stringify(payload) },
+  });
 }

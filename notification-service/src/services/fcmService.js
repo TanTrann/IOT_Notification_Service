@@ -31,9 +31,10 @@ class FCMService {
     }
   }
 
-  async sendToUser(deviceId, notification) {
+  // Gửi tới TẤT CẢ token đã đăng ký (mô hình "1 topic notification" — ai cũng nhận).
+  async sendToAll(notification) {
     this._check();
-    const tokens = await FCMToken.find({ deviceId }).select('token');
+    const tokens = await FCMToken.find().select('token');
     if (!tokens.length) return [];
     return Promise.allSettled(tokens.map(t => this.sendToDevice(t.token, notification)));
   }

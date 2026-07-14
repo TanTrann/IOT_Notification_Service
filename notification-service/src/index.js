@@ -27,10 +27,7 @@ app.use(cors({
     return cb(new Error(`Origin ${origin} not allowed by CORS`));
   },
 }));
-// SSE cần đẩy từng chunk ngay — compression sẽ buffer nên phải bỏ qua stream màn hình rời
-app.use(compression({
-  filter: (req, res) => (req.path === '/internal/display/stream' ? false : compression.filter(req, res)),
-}));
+app.use(compression());
 app.use(express.json());
 app.use(morgan(isProd ? 'combined' : 'dev'));
 

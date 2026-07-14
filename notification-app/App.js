@@ -1,14 +1,16 @@
-// SmartFarm Notifications — trung tâm thông báo trên mobile (Android).
-// Nhận push FCM trực tiếp từ notification-service (backend không cần sửa gì:
-// getDevicePushTokenAsync() trả về đúng FCM registration token mà
-// fcmService.sendToDevice() đang gửi tới).
+// SmartFarm Notifications — app Android, CHỈ dùng Firebase (FCM). Không SSE.
+// Đăng ký FCM token với notification-service (/internal/push/token) rồi nhận push:
+//   - App mở (foreground): listener bắt message → thêm vào danh sách trong app + banner.
+//   - App nền/kill: hệ điều hành hiện notification trên khay (FCM). Chạm để mở lại app.
+// Danh sách lưu AsyncStorage để mở lại app vẫn thấy lịch sử gần đây.
+//
+//   MCP ─► HiveMQ (planttree/{deviceId}/notifications) ─► service ─FCM─► app này
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, FlatList, RefreshControl, SafeAreaView,
-  StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View,
+  Alert, FlatList, SafeAreaView, ScrollView, StatusBar,
+  StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 
 // Hiện notification cả khi app đang mở (foreground)
@@ -18,34 +20,44 @@ Notifications.setNotificationHandler({
     shouldShowBanner: true,  // SDK 53+
     shouldShowList: true,
     shouldPlaySound: true,
-    shouldSetBadge: true,
+    shouldSetBadge: false,
   }),
 });
 
-const TYPE_ICON = { water: '💧', light: '💡', temperature: '🌡️', nutrition: '🌱', disease: '🦠', system: '⚙️' };
+const DEFAULT_SERVER = 'http://10.0.2.2:3001';   // 10.0.2.2 = localhost của máy dev nhìn từ emulator
+const STORE_ITEMS = 'fcmItems';
+const STORE_CFG = 'fcmCfg';
+const MAX = 100;
+
+const TYPE_ICON = { water: '💧', light: '💡', temperature: '🌡️', temp: '🌡️', nutrition: '🌱', disease: '🦠', system: '⚙️', alert: '⚠️' };
 const SEV_COLOR = { info: '#2d7ff9', warning: '#e8930c', critical: '#e0442e' };
+const SEV_LABEL = { critical: 'Nguy cấp', warning: 'Cảnh báo', info: 'Thông tin' };
 
-// 10.0.2.2 = localhost của máy dev nhìn từ Android emulator.
-// Chạy trên điện thoại thật thì đổi thành IP LAN của máy chạy service.
-const DEFAULT_SERVER = 'http://10.0.2.2:3001';
+const pick = (o, keys) => { for (const k of keys) if (o?.[k] != null && o[k] !== '') return o[k]; return undefined; };
 
-// atob không có sẵn trên mọi bản Hermes → tự decode base64url
-function b64decode(s) {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-  s = s.replace(/-/g, '+').replace(/_/g, '/').replace(/[^A-Za-z0-9+/]/g, '');
-  let out = '';
-  for (let i = 0; i < s.length; i += 4) {
-    const n = (chars.indexOf(s[i]) << 18) | (chars.indexOf(s[i + 1]) << 12)
-      | ((chars.indexOf(s[i + 2]) & 63) << 6) | (chars.indexOf(s[i + 3]) & 63);
-    out += String.fromCharCode((n >> 16) & 255);
-    if (s[i + 2] && s[i + 2] !== '=') out += String.fromCharCode((n >> 8) & 255);
-    if (s[i + 3] && s[i + 3] !== '=') out += String.fromCharCode(n & 255);
-  }
-  try { return decodeURIComponent(escape(out)); } catch { return out; }
+function normSev(raw) {
+  const s = String(raw ?? '').toLowerCase();
+  if (['critical', 'crit', 'error', 'danger', 'high', 'nguy cấp'].some(x => s.includes(x))) return 'critical';
+  if (['warning', 'warn', 'medium', 'cảnh báo'].some(x => s.includes(x))) return 'warning';
+  return 'info';
 }
-function parseJwt(t) {
-  try { return JSON.parse(b64decode(t.split('.')[1])); } catch { return null; }
+
+// Chuẩn hóa payload bất kỳ → thứ hiển thị được; KHÔNG đổi dữ liệu gốc.
+function view(payload) {
+  const title = pick(payload, ['title', 'tieu_de', 'name', 'event']);
+  const body  = pick(payload, ['body', 'message', 'msg', 'content', 'noi_dung', 'description']);
+  const type  = String(pick(payload, ['type', 'category', 'loai']) ?? '').toLowerCase();
+  const sev   = normSev(pick(payload, ['severity', 'level', 'muc_do', 'priority']));
+  return {
+    icon:    TYPE_ICON[type] || '🔔',
+    sev,
+    sevRaw:  pick(payload, ['severity', 'level', 'muc_do', 'priority']),
+    typeRaw: pick(payload, ['type', 'category', 'loai']),
+    title:   title != null ? String(title) : '(thông báo không có title)',
+    body:    body != null ? String(body) : (title != null ? '' : JSON.stringify(payload)),
+  };
 }
+
 function timeAgo(iso) {
   if (!iso) return '';
   const s = Math.floor((Date.now() - new Date(iso)) / 1000);
@@ -55,143 +67,151 @@ function timeAgo(iso) {
   return new Date(iso).toLocaleString('vi-VN');
 }
 
+// Dựng 1 mục từ message FCM mà expo-notifications nhận được.
+// Service gửi: notification:{title,body}, data:{deviceId,type,severity,raw}
+let _uid = 0;
+function itemFromRequest(req) {
+  const content = req?.content || {};
+  const data = content.data || {};
+  let payload = {};
+  if (data.raw) { try { payload = JSON.parse(data.raw); } catch {} }
+  if (!payload || typeof payload !== 'object' || !Object.keys(payload).length) {
+    payload = { title: content.title, body: content.body, type: data.type, severity: data.severity };
+  }
+  return {
+    id: `${req?.identifier || 'n'}-${++_uid}`,
+    key: req?.identifier || null,     // để chống trùng (foreground + tap cùng 1 message)
+    payload,
+    deviceId: data.deviceId || '',
+    receivedAt: new Date().toISOString(),
+  };
+}
+
 export default function App() {
   const [server, setServer] = useState(DEFAULT_SERVER);
-  const [jwtRaw, setJwtRaw] = useState('');
-  const [connected, setConnected] = useState(false);
-  const [showConfig, setShowConfig] = useState(true);
+  const [apiKey, setApiKey] = useState('');
   const [items, setItems] = useState([]);
-  const [unread, setUnread] = useState(0);
   const [pushOn, setPushOn] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(false);
-  const jwt = jwtRaw.replace(/\s+/g, '');
-  const deviceId = parseJwt(jwt)?.deviceId;
-  const stateRef = useRef({});
-  stateRef.current = { server, jwt };
+  const [showConfig, setShowConfig] = useState(true);
+  const [expanded, setExpanded] = useState(null);
 
-  const api = useCallback(async (path, opts = {}) => {
-    const { server: s, jwt: t } = stateRef.current;
-    const res = await fetch(`${s.replace(/\/$/, '')}/api/v1/notifications${path}`, {
-      ...opts,
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}`, ...(opts.headers || {}) },
+  const cfgRef = useRef({ server, apiKey });
+  cfgRef.current = { server, apiKey };
+  const seenRef = useRef(new Set());   // identifier đã thêm → chống trùng
+
+  const addItem = useCallback((req) => {
+    const it = itemFromRequest(req);
+    if (it.key && seenRef.current.has(it.key)) return;
+    if (it.key) seenRef.current.add(it.key);
+    setItems(prev => {
+      const next = [it, ...prev].slice(0, MAX);
+      AsyncStorage.setItem(STORE_ITEMS, JSON.stringify(next)).catch(() => {});
+      return next;
     });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(json.message || `HTTP ${res.status}`);
-    return json;
   }, []);
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    try {
-      const { items: list, unreadCount } = await api('/?page=1&limit=20');
-      setItems(list); setUnread(unreadCount); setPage(1); setHasMore(list.length >= 20);
-      setConnected(true);
-    } catch (e) {
-      Alert.alert('Không tải được thông báo', e.message);
-    } finally { setLoading(false); }
-  }, [api]);
-
-  const loadMore = useCallback(async () => {
-    const next = page + 1;
-    try {
-      const { items: list } = await api(`/?page=${next}&limit=20`);
-      setItems(prev => [...prev, ...list]); setPage(next); setHasMore(list.length >= 20);
-    } catch {}
-  }, [api, page]);
-
-  async function connect() {
-    const claims = parseJwt(jwt);
-    if (!claims) return Alert.alert('JWT không hợp lệ', 'Kiểm tra lại token đã dán.');
-    if (claims.exp && claims.exp * 1000 < Date.now())
-      return Alert.alert('JWT đã hết hạn', 'Sinh token mới: node generate-token.js <device_id>');
-    await AsyncStorage.setItem('cfg', JSON.stringify({ server, jwt }));
-    await refresh();
-    setShowConfig(false);
-  }
-
-  async function enablePush() {
-    if (!jwt) return Alert.alert('Thiếu JWT', 'Kết nối trước rồi mới bật push.');
-    if (!Device.isDevice && !__DEV__)
-      return Alert.alert('Cần thiết bị thật hoặc emulator có Google Play Services');
+  // Đăng ký FCM token với service → nhận push kể cả khi app đóng.
+  const registerPush = useCallback(async () => {
     try {
       const { status } = await Notifications.requestPermissionsAsync();
-      if (status !== 'granted') return Alert.alert('Bị từ chối', 'App chưa được cấp quyền thông báo.');
+      if (status !== 'granted') { Alert.alert('Bị từ chối', 'App chưa được cấp quyền thông báo.'); return false; }
       await Notifications.setNotificationChannelAsync('default', {
         name: 'Cảnh báo SmartFarm',
         importance: Notifications.AndroidImportance.MAX,
         vibrationPattern: [0, 200, 100, 200],
       });
-      // Token FCM native — đúng loại token mà backend đang send tới
       const { data: fcmToken } = await Notifications.getDevicePushTokenAsync();
-      await api('/token', { method: 'POST', body: JSON.stringify({ token: fcmToken, device: 'android' }) });
+      const { server: s, apiKey: k } = cfgRef.current;
+      const res = await fetch(`${s.replace(/\/$/, '')}/internal/push/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': k },
+        body: JSON.stringify({ token: fcmToken, device: 'android' }),
+      });
+      if (!res.ok) throw new Error(`Đăng ký token lỗi: HTTP ${res.status}`);
       setPushOn(true);
-      Alert.alert('Sẵn sàng 🔔', 'Đã đăng ký nhận cảnh báo từ hệ thống.');
+      return true;
     } catch (e) {
       Alert.alert('Lỗi bật push', e.message);
+      return false;
     }
+  }, []);
+
+  async function connect() {
+    if (!apiKey.trim()) return Alert.alert('Thiếu API key', 'Nhập INTERNAL_API_KEY của service.');
+    await AsyncStorage.setItem(STORE_CFG, JSON.stringify({ server, apiKey }));
+    const ok = await registerPush();
+    if (ok) setShowConfig(false);
   }
 
-  async function markRead(n) {
-    if (n.isRead) return;
-    try {
-      await api(`/${n._id}/read`, { method: 'PATCH' });
-      setItems(prev => prev.map(x => (x._id === n._id ? { ...x, isRead: true } : x)));
-      setUnread(u => Math.max(0, u - 1));
-    } catch (e) { Alert.alert('Lỗi', e.message); }
-  }
-
-  async function markAllRead() {
-    try {
-      await api('/read-all', { method: 'PATCH' });
-      setItems(prev => prev.map(x => ({ ...x, isRead: true })));
-      setUnread(0);
-    } catch (e) { Alert.alert('Lỗi', e.message); }
-  }
-
-  // Nạp config đã lưu + tự kết nối lại
+  // Nạp config + lịch sử đã lưu, tự đăng ký lại push
   useEffect(() => {
-    AsyncStorage.getItem('cfg').then(raw => {
-      if (!raw) return;
-      const cfg = JSON.parse(raw);
-      setServer(cfg.server); setJwtRaw(cfg.jwt);
-      stateRef.current = { server: cfg.server, jwt: cfg.jwt };
-      refresh().then(() => setShowConfig(false)).catch(() => {});
-    });
-  }, [refresh]);
+    (async () => {
+      const rawItems = await AsyncStorage.getItem(STORE_ITEMS);
+      if (rawItems) {
+        try {
+          const saved = JSON.parse(rawItems);
+          saved.forEach(it => it.key && seenRef.current.add(it.key));
+          setItems(saved);
+        } catch {}
+      }
+      const rawCfg = await AsyncStorage.getItem(STORE_CFG);
+      if (rawCfg) {
+        const cfg = JSON.parse(rawCfg);
+        setServer(cfg.server); setApiKey(cfg.apiKey);
+        cfgRef.current = cfg;
+        setShowConfig(false);
+        registerPush();
+      }
+    })();
+  }, [registerPush]);
 
-  // Push đến khi app đang mở → cập nhật danh sách
+  // Lắng nghe message FCM: foreground nhận + khi chạm notification từ khay
   useEffect(() => {
-    const sub = Notifications.addNotificationReceivedListener(() => refresh());
-    const tap = Notifications.addNotificationResponseReceivedListener(() => refresh());
-    return () => { sub.remove(); tap.remove(); };
-  }, [refresh]);
+    const recv = Notifications.addNotificationReceivedListener(n => addItem(n.request));
+    const resp = Notifications.addNotificationResponseReceivedListener(r => addItem(r.notification.request));
+    return () => { recv.remove(); resp.remove(); };
+  }, [addItem]);
 
-  const renderItem = ({ item: n }) => (
-    <TouchableOpacity
-      style={[st.noti, { borderLeftColor: SEV_COLOR[n.severity] || SEV_COLOR.info }]}
-      onPress={() => markRead(n)} activeOpacity={0.7}
-    >
-      <Text style={st.icon}>{TYPE_ICON[n.type] || '🔔'}</Text>
-      <View style={{ flex: 1 }}>
-        <View style={st.titleRow}>
-          <Text style={[st.title, !n.isRead && st.bold]} numberOfLines={2}>{n.title}</Text>
-          {!n.isRead && <View style={st.dot} />}
+  const renderItem = ({ item }) => {
+    const v = view(item.payload);
+    const open = expanded === item.id;
+    return (
+      <TouchableOpacity
+        style={[st.noti, { borderLeftColor: SEV_COLOR[v.sev] }]}
+        activeOpacity={0.7}
+        onPress={() => setExpanded(open ? null : item.id)}
+      >
+        <Text style={st.icon}>{v.icon}</Text>
+        <View style={{ flex: 1 }}>
+          <View style={st.titleRow}>
+            <Text style={st.title} numberOfLines={2}>{v.title}</Text>
+            {v.sevRaw != null && (
+              <View style={[st.badge, { backgroundColor: SEV_COLOR[v.sev] }]}>
+                <Text style={st.badgeText}>{SEV_LABEL[v.sev]}</Text>
+              </View>
+            )}
+          </View>
+          {!!v.body && <Text style={st.body}>{v.body}</Text>}
+          <Text style={st.meta}>{item.deviceId ? `${item.deviceId} · ` : ''}{v.typeRaw ? `${v.typeRaw} · ` : ''}{timeAgo(item.receivedAt)}</Text>
+          {open && (
+            <ScrollView horizontal style={st.rawBox}>
+              <Text style={st.raw}>{JSON.stringify(item.payload, null, 2)}</Text>
+            </ScrollView>
+          )}
         </View>
-        <Text style={st.body}>{n.body}</Text>
-        <Text style={st.meta}>{n.deviceId} · {timeAgo(n.createdAt)}</Text>
-      </View>
-    </TouchableOpacity>
-  );
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <SafeAreaView style={st.safe}>
       <StatusBar barStyle="dark-content" backgroundColor="#f0f4f2" />
       <View style={st.header}>
         <View>
-          <Text style={st.h1}>🔔 SmartFarm{unread > 0 ? `  (${unread})` : ''}</Text>
-          {deviceId && connected && <Text style={st.sub}>📟 {deviceId} · push {pushOn ? 'đang bật' : 'chưa bật'}</Text>}
+          <Text style={st.h1}>🌱 SmartFarm</Text>
+          <Text style={[st.sub, { color: pushOn ? '#1f8a4c' : '#e0442e' }]}>
+            {pushOn ? '● Push đang bật (FCM)' : '○ Chưa bật push'}
+          </Text>
         </View>
         <TouchableOpacity onPress={() => setShowConfig(v => !v)}>
           <Text style={st.gear}>⚙️</Text>
@@ -202,39 +222,31 @@ export default function App() {
         <View style={st.card}>
           <Text style={st.label}>Notification Service URL (emulator: 10.0.2.2, máy thật: IP LAN)</Text>
           <TextInput style={st.input} value={server} onChangeText={setServer} autoCapitalize="none" />
-          <Text style={st.label}>JWT Token (node generate-token.js &lt;device_id&gt;)</Text>
+          <Text style={st.label}>API key (INTERNAL_API_KEY của service)</Text>
           <TextInput
-            style={[st.input, { height: 70 }]} value={jwtRaw} onChangeText={setJwtRaw}
-            multiline autoCapitalize="none" placeholder="eyJhbGciOi..."
+            style={st.input} value={apiKey} onChangeText={setApiKey}
+            autoCapitalize="none" placeholder="chuỗi bí mật trong .env" secureTextEntry
           />
-          <View style={st.row}>
-            <TouchableOpacity style={st.btn} onPress={connect}><Text style={st.btnText}>Lưu & Kết nối</Text></TouchableOpacity>
-            <TouchableOpacity style={[st.btn, st.btnGhost]} onPress={enablePush}>
-              <Text style={[st.btnText, st.btnGhostText]}>🔔 Bật nhận push</Text>
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity style={st.btn} onPress={connect}>
+            <Text style={st.btnText}>Lưu & Bật nhận push</Text>
+          </TouchableOpacity>
         </View>
       )}
 
       <View style={st.feedHead}>
-        <Text style={st.h2}>Thông báo</Text>
-        <TouchableOpacity onPress={markAllRead}><Text style={st.link}>✓ Đọc tất cả</Text></TouchableOpacity>
+        <Text style={st.h2}>Thông báo{items.length ? ` (${items.length})` : ''}</Text>
       </View>
 
       <FlatList
         data={items}
-        keyExtractor={n => n._id}
+        keyExtractor={n => String(n.id)}
         renderItem={renderItem}
         contentContainerStyle={{ paddingHorizontal: 14, paddingBottom: 30 }}
-        refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} />}
-        onEndReachedThreshold={0.3}
-        onEndReached={() => hasMore && loadMore()}
-        ListEmptyComponent={!loading && (
+        ListEmptyComponent={
           <Text style={st.empty}>
-            {connected ? 'Chưa có thông báo nào.' : 'Nhập JWT và bấm "Lưu & Kết nối" để bắt đầu.'}
+            {pushOn ? 'Đang chờ thông báo… (bắn thử: node scripts/publish-test.js)' : 'Nhập API key rồi bấm "Lưu & Bật nhận push".'}
           </Text>
-        )}
-        ListFooterComponent={loading && items.length > 0 ? <ActivityIndicator style={{ margin: 12 }} /> : null}
+        }
       />
     </SafeAreaView>
   );
@@ -244,26 +256,24 @@ const st = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#f0f4f2' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, paddingBottom: 8 },
   h1: { fontSize: 20, fontWeight: '700', color: '#1e2a26' },
-  sub: { fontSize: 12, color: '#6b7a74', marginTop: 2 },
+  sub: { fontSize: 12, marginTop: 2, fontWeight: '600' },
   gear: { fontSize: 22 },
   card: { backgroundColor: '#fff', borderRadius: 14, padding: 14, marginHorizontal: 14, marginBottom: 8, borderWidth: 1, borderColor: '#e2e8e5' },
   label: { fontSize: 12, color: '#6b7a74', marginBottom: 4 },
   input: { borderWidth: 1, borderColor: '#e2e8e5', borderRadius: 8, padding: 9, fontSize: 13, marginBottom: 10, backgroundColor: '#fafcfb', color: '#1e2a26' },
-  row: { flexDirection: 'row', gap: 8 },
-  btn: { backgroundColor: '#1f8a4c', paddingVertical: 10, paddingHorizontal: 14, borderRadius: 8 },
-  btnText: { color: '#fff', fontWeight: '600', fontSize: 13 },
-  btnGhost: { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#e2e8e5' },
-  btnGhostText: { color: '#176e3c' },
+  btn: { backgroundColor: '#1f8a4c', paddingVertical: 11, borderRadius: 8, alignItems: 'center' },
+  btnText: { color: '#fff', fontWeight: '600', fontSize: 14 },
   feedHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 8 },
   h2: { fontSize: 15, fontWeight: '600', color: '#1e2a26' },
-  link: { color: '#176e3c', fontSize: 13, fontWeight: '500' },
   noti: { flexDirection: 'row', gap: 10, backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: '#e2e8e5', borderLeftWidth: 4, padding: 12, marginBottom: 9 },
   icon: { fontSize: 20 },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  title: { fontSize: 14, color: '#1e2a26', flexShrink: 1 },
-  bold: { fontWeight: '700' },
-  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#2d7ff9' },
+  title: { fontSize: 14, color: '#1e2a26', flexShrink: 1, fontWeight: '700' },
+  badge: { borderRadius: 5, paddingHorizontal: 7, paddingVertical: 2 },
+  badgeText: { color: '#fff', fontSize: 10, fontWeight: '700' },
   body: { fontSize: 13, color: '#6b7a74', marginTop: 2 },
   meta: { fontSize: 11, color: '#98a6a0', marginTop: 5 },
+  rawBox: { marginTop: 8, backgroundColor: '#0d1512', borderRadius: 8, padding: 10 },
+  raw: { color: '#b8d4c6', fontSize: 11, fontFamily: 'monospace' },
   empty: { textAlign: 'center', color: '#6b7a74', marginTop: 40, fontSize: 13 },
 });

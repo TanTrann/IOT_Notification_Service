@@ -5,6 +5,11 @@ Bộ tài liệu chi tiết cho dịch vụ gửi thông báo đẩy của hệ 
 | Tài liệu | Nội dung |
 |---|---|
 | [01-firebase-setup.md](01-firebase-setup.md) | Hướng dẫn từng bước tạo project Firebase, lấy service account, VAPID key, cấu hình client & service worker |
-| [02-kien-truc.md](02-kien-truc.md) | Kiến trúc hệ thống: các thành phần, sơ đồ, trách nhiệm từng module, mô hình dữ liệu |
-| [03-luong-hoat-dong.md](03-luong-hoat-dong.md) | Luồng hoạt động end-to-end: cảm biến, lệnh điều khiển, đăng ký token, đọc thông báo |
+| [02-kien-truc.md](02-kien-truc.md) | Kiến trúc hệ thống (nghe `planttree/{deviceId}/notifications` → broadcast FCM): thành phần, sơ đồ, mô hình dữ liệu |
+| [03-luong-hoat-dong.md](03-luong-hoat-dong.md) | Luồng end-to-end: MCP → push Firebase, client đăng ký & nhận qua Firebase Web Push |
 | [04-tich-hop-web.md](04-tich-hop-web.md) | **Bàn giao cho dev web**: REST API, sign JWT, đăng ký FCM token, service worker, các bẫy thường gặp |
+
+> **Mô hình hiện tại (Firebase-only):** service nghe **`planttree/{deviceId}/notifications`**
+> (song song với `sensors`/`commands` của Phong), **không dịch** payload, và **broadcast push qua
+> Firebase (FCM)** tới mọi client. Màn hình kiosk web nhận qua **Firebase Web Push**. Đã bỏ SSE.
+> Các luồng cũ (2 họ topic sensor/control, so ngưỡng, dịch lệnh, lưu DB) đã gỡ bỏ.

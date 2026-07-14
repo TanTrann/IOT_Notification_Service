@@ -26,7 +26,8 @@ Tài liệu này hướng dẫn thiết lập **Firebase Cloud Messaging (FCM)**
 
 - **Server** cần **Service Account** (private key) để xác thực với Firebase và gửi message.
 - **Client** cần **Web config + VAPID key** để đăng ký nhận push, rồi gửi token về server lưu vào DB.
-- Server tra token theo `deviceId` rồi gửi push tới đúng thiết bị.
+- Theo mô hình hiện tại, server **broadcast** tới **mọi** token đã đăng ký
+  (`fcmService.sendToAll`) mỗi khi có tin trên `planttree/{deviceId}/notifications`.
 
 ---
 
@@ -164,7 +165,7 @@ Tham khảo [`src/services/fcmService.js`](../src/services/fcmService.js). Mỗi
 Lưu ý:
 - **FCM bắt buộc mọi giá trị trong `data` là chuỗi** → code tự `String(v)` toàn bộ.
 - Nếu token không còn hợp lệ (`messaging/registration-token-not-registered`), service **tự xóa** token đó khỏi MongoDB.
-- `sendToUser(deviceId)` tìm **tất cả** token theo `deviceId` và gửi song song (một người có thể đăng nhập nhiều thiết bị).
+- `sendToAll()` tìm **tất cả** token trong `fcmtokens` và gửi song song (mô hình "1 topic — ai đăng ký cũng nhận"). Vẫn còn `sendToDevice(token, …)` để gửi tới 1 token cụ thể.
 
 ---
 
