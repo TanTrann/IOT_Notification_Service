@@ -2,7 +2,7 @@
 
 Tài liệu này hướng dẫn thiết lập **Firebase Cloud Messaging (FCM)** cho cả hai phía:
 - **Phía Server (Notification Service)** — dùng Firebase Admin SDK để *gửi* push.
-- **Phía Client (Web/test-client)** — dùng Firebase JS SDK để *nhận* push và lấy registration token.
+- **Phía Client (notification-web)** — dùng Firebase JS SDK để *nhận* push và lấy registration token.
 
 ---
 
@@ -106,7 +106,7 @@ WARNING: Push notifications will not work without valid credentials!
 
 ## Phần C — Cấu hình phía Client (Web SDK)
 
-Áp dụng cho `test-client` hoặc ứng dụng web thật.
+Áp dụng cho `notification-web` (màn hình kiosk) hoặc ứng dụng web thật.
 
 ### C.1. Đăng ký Web App & lấy config
 
@@ -124,9 +124,9 @@ const firebaseConfig = {
 };
 ```
 
-3. Điền config này vào **cả hai** file của test-client:
-   - `test-client/index.html`
-   - `test-client/firebase-messaging-sw.js` (service worker — chạy nền để nhận push khi tab đóng)
+3. Điền config này vào **cả hai** file của notification-web:
+   - `notification-web/index.html`
+   - `notification-web/firebase-messaging-sw.js` (service worker — chạy nền để nhận push khi tab đóng)
 
 > Config phải **giống nhau** ở cả hai file.
 
@@ -134,7 +134,7 @@ const firebaseConfig = {
 
 1. Firebase Console → **Project Settings** → tab **Cloud Messaging**.
 2. Mục **Web Push certificates** → **Generate key pair**.
-3. Copy chuỗi key → điền vào ô **VAPID Key** trong test-client.
+3. Copy chuỗi key → điền vào biến **VAPID_KEY** trong notification-web.
 
 VAPID key dùng khi gọi `getToken(messaging, { vapidKey })` để lấy registration token của trình duyệt.
 
@@ -142,7 +142,7 @@ VAPID key dùng khi gọi `getToken(messaging, { vapidKey })` để lấy regist
 
 - File `firebase-messaging-sw.js` xử lý push khi web ở chế độ nền/đóng tab.
 - Service worker **chỉ chạy** trên `http://localhost` hoặc **HTTPS** — không mở file HTML trực tiếp.
-- Chạy test-client qua HTTP server: `cd test-client && npm run dev` rồi mở `http://localhost:8080`.
+- Chạy notification-web qua HTTP server: `cd notification-web && npm run dev` rồi mở `http://localhost:3000`.
 
 ---
 
