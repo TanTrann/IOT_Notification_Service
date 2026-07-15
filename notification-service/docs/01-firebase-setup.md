@@ -29,7 +29,7 @@ Tài liệu này hướng dẫn thiết lập **Firebase Cloud Messaging (FCM)**
 - **Client** cần **Web config + VAPID key** để đăng ký nhận push, rồi gửi token **kèm `deviceId`**
   về server lưu vào DB (qua `POST /internal/push/token`, header `x-api-key`).
 - Theo mô hình hiện tại, server gửi tới **đúng** các token đã đăng ký **cùng `deviceId`**
-  (`fcmService.sendToDeviceId`) mỗi khi có tin trên `planttree/{deviceId}/notifications` —
+  (`fcmService.sendToDeviceId`) mỗi khi Phong `POST /internal/notify` (body kèm `deviceId`) —
   targeting theo thiết bị, mỗi màn hình chỉ nhận tin của cây mình.
 
 ---
@@ -196,5 +196,5 @@ Lưu ý:
 | `Firebase not initialized` khi gửi | Credential server sai/thiếu. Kiểm tra log khởi động & 3 biến `FIREBASE_*`. |
 | Private key lỗi parse | `FIREBASE_PRIVATE_KEY` chưa bọc nháy kép hoặc đã xuống dòng thật thay vì `\n`. |
 | Client không lấy được token | Thiếu/sai VAPID key, hoặc chưa cấp quyền notification, hoặc không chạy trên HTTPS/localhost. |
-| Publish nhưng không có push | `deviceId` payload không khớp `deviceId` của token đã lưu; hoặc token đã hết hạn (đã bị tự xóa). |
+| Gửi `/internal/notify` nhưng không có push | `deviceId` trong body không khớp `deviceId` của token đã lưu; hoặc token đã hết hạn (đã bị tự xóa). |
 | Push không hiện khi đóng tab | Service worker `firebase-messaging-sw.js` chưa được đăng ký hoặc thiếu config. |

@@ -3,8 +3,8 @@
 Tài liệu bàn giao cho người phụ trách website: cách hiển thị danh sách thông báo và nhận
 push notification từ **IOT Notification Service** trên trang của bạn.
 
-Bạn **không cần đụng tới MQTT/broker** — service đã lo toàn bộ phần nhận dữ liệu IoT,
-xử lý và tạo thông báo. Website/màn hình kiosk chỉ làm 3 việc:
+Bạn **không cần đụng tới nguồn thông báo** — Phong xử lý và gửi thông báo vào service
+(`POST /internal/notify`), service lo phần lưu trữ và đẩy push. Website/màn hình kiosk chỉ làm 3 việc:
 
 1. **Cấu hình** Server URL + `deviceId` (cây/thiết bị màn hình này đứng cạnh) + API key.
 2. **Gọi REST API** để hiển thị danh sách thông báo, đếm chưa đọc, đánh dấu đã đọc.
@@ -12,11 +12,11 @@ xử lý và tạo thông báo. Website/màn hình kiosk chỉ làm 3 việc:
 
 > Tham khảo triển khai mẫu hoàn chỉnh (1 file HTML): [`../../notification-web/index.html`](../../notification-web/index.html)
 
-> ⚠️ **Mô hình hiện tại (`planttree/{deviceId}/notifications`, targeting theo deviceId — KHÔNG còn user/đăng nhập/JWT):**
+> ⚠️ **Mô hình hiện tại (Phong `POST /internal/notify`, targeting theo deviceId — KHÔNG còn user/đăng nhập/JWT):**
 > - **`deviceId` là danh tính của chính màn hình kiosk** (cấu hình trên máy), không gắn với user.
-> - **Push (FCM) theo deviceId**: mỗi tin trên topic của một cây, service chỉ gửi tới các token đã
+> - **Push (FCM) theo deviceId**: mỗi tin Phong gửi kèm một `deviceId`, service chỉ gửi tới các token đã
 >   đăng ký **đúng `deviceId`** đó → mỗi màn hình chỉ nhận tin của cây mình.
-> - **REST danh sách lọc theo `deviceId`**: luồng MQTT **ghi mỗi tin vào MongoDB**, nên
+> - **REST danh sách lọc theo `deviceId`**: mỗi tin nhận qua `/internal/notify` được **ghi vào MongoDB**, nên
 >   `GET /api/v1/notifications?deviceId=...` trả về lịch sử bền vững của đúng cây đó. Push realtime và
 >   lịch sử REST dùng chung `deviceId` → **khớp nhau**.
 > - **Xác thực**: chỉ một **API key** chung gửi qua header `x-api-key` cho **mọi** request
@@ -160,8 +160,8 @@ messaging.onBackgroundMessage(payload => {
 
 - **CORS**: origin của bạn phải nằm trong `ALLOWED_ORIGINS` của service — báo cho Tân thêm.
 - **Push không tới?** Kiểm tra: đã `POST /internal/push/token` thành công chưa (đúng `x-api-key`),
-  `deviceId` đăng ký có **khớp** `deviceId` mà MCP publish không, quyền notification của browser,
-  và service worker đăng ký đúng scope root.
+  `deviceId` đăng ký có **khớp** `deviceId` mà Phong gửi trong `/internal/notify` không, quyền
+  notification của browser, và service worker đăng ký đúng scope root.
 - **Nhiều màn hình cùng một cây**: cứ `POST /internal/push/token` với **cùng `deviceId`** cho từng
   máy — service gửi push song song tới mọi token của `deviceId` đó, token chết tự bị xóa.
 - **Đổi cây**: đăng ký lại token với `deviceId` mới; nên xóa danh sách cũ ở client để không lẫn tin

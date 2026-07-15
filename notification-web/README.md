@@ -32,15 +32,15 @@ npm run dev
    - **API key** — chính là `INTERNAL_API_KEY` trong `.env` của service
    rồi bấm **Lưu cấu hình**.
 3. Bấm **🔔 Bật nhận push** → cho phép quyền thông báo.
-4. Xong — khi Phong publish lên `planttree/<Device ID>/notifications` (hoặc bạn giả lập bằng
-   `cd notification-service && node scripts/publish-test.js '{"title":"..."}' ESP32S3_Zone1`), thông báo tự hiện.
+4. Xong — khi Phong gọi `POST /internal/notify` (kèm `deviceId` = Device ID này), hoặc bạn giả lập bằng
+   `cd notification-service && node scripts/publish-test.js '{"title":"..."}' ESP32S3_Zone1`, thông báo tự hiện.
 
 Cấu hình (server URL + deviceId + API key) lưu trong `localStorage`, lần sau mở trang tự kết nối lại.
 
 ## Demo nhanh (không cần thiết bị thật)
 
 1. Mở `notification-web` (port 3000), cấu hình deviceId + API key và **🔔 Bật nhận push**.
-2. Giả lập MCP bắn thông báo đúng device: `cd notification-service && node scripts/publish-test.js '' ESP32S3_Zone1`.
+2. Giả lập Phong bắn thông báo đúng device: `cd notification-service && node scripts/publish-test.js '' ESP32S3_Zone1`.
 
 → Trang này lập tức hiện toast **"Cây thiếu nước"** + badge chưa đọc tăng.
 

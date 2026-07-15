@@ -1,6 +1,5 @@
 import 'dotenv/config';
 import './config/firebase.js';
-import { startMQTTListener } from './services/mqttHandler.js';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -47,7 +46,6 @@ const PORT = process.env.PORT || 3001;
 
 async function start() {
   await connectDB();
-  startMQTTListener();
   app.listen(PORT, () => console.log(`Notification Service running on port ${PORT}`));
 }
 
