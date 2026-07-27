@@ -40,7 +40,6 @@ class FCMService {
     if (!tokens.length) return [];
     return Promise.allSettled(tokens.map(t => this.sendToDevice(t.token, notification)));
   }
-
 }
 
 export default new FCMService();
