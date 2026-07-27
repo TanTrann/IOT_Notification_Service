@@ -2,8 +2,9 @@ import mongoose, { Schema } from 'mongoose';
 
 const notificationSchema = new Schema(
   {
-    eventId: { type: String, unique: true, sparse: true },
-    deviceId:   { type: String, required: true },
+    eventId:  { type: String, unique: true, sparse: true },
+    deviceId: { type: String, required: true },
+    event:    { type: String },
     title:    { type: String, required: true },
     body:     { type: String, required: true },
     type:     { type: String, enum: ['disease', 'water', 'nutrition', 'light', 'temperature', 'system'] },

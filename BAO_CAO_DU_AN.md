@@ -37,10 +37,12 @@ Luồng dữ liệu (mô hình hiện tại):
 Server Phong ─POST /internal/notify (JSON)─► Notification Service ─FCM─► Màn hình web kiosk cạnh cây
 ```
 
-Điểm thiết kế quan trọng: server của Phong xử lý thông báo xong rồi **gọi API `POST /internal/notify`** (kèm `deviceId` trong body). Notification Service **không dịch, không biến đổi** — đẩy nguyên nội dung qua Firebase tới **đúng các màn hình đã đăng ký deviceId đó** (targeting theo thiết bị): mỗi màn hình kiosk cấu hình deviceId của cây nó đứng cạnh, chỉ nhận tin của cây đó.
+Điểm thiết kế quan trọng: server của Phong xử lý và phát hiện sự kiện xong rồi **gọi API `POST /internal/notify`** (kèm `deviceId`, mã `event`, mức độ `severity` và thông số thô `data` trong body). Notification Service sở hữu **lớp Template Engine (`templateEngine.js`)** để tự map từ mã `event` + `data` ra tiêu đề (`title`) và nội dung (`body`) trực quan trước khi đẩy push qua Firebase tới **đúng các màn hình đã đăng ký deviceId đó** (targeting theo thiết bị).
 
-> **Ghi chú tiến hoá:** phiên bản đầu của service tự "nghe ké" dữ liệu cảm biến (`xmini/sensor_data`, `xmini/control`) qua MQTT, so ngưỡng và dịch lệnh thành thông báo. Giai đoạn sau, service vẫn nghe MQTT nhưng ở topic thông báo riêng (`planttree/{deviceId}/notifications`) do Phong tự phát. Bản mới nhất **bỏ hẳn MQTT**: Phong chủ động **gọi API `POST /internal/notify`** sang service — ranh giới rõ ràng, Phong kiểm soát khi nào/gửi gì, service chỉ hiển thị. Đồng thời bỏ lớp user/đăng nhập (JWT): **deviceId trở thành danh tính của chính màn hình kiosk**, cấu hình trực tiếp trên máy — push và lịch sử đều lọc theo deviceId nên luôn khớp nhau. Các luồng dịch/so ngưỡng, kênh SSE trung gian và lớp user đã được gỡ bỏ.
-
+> **Ghi chú tiến hoá:** 
+> - Phiên bản đầu của service tự "nghe ké" dữ liệu cảm biến qua MQTT.
+> - Giai đoạn 2: Phong chủ động bắn `title`/`body` sẵn qua API `POST /internal/notify` (pass-through).
+> - **Phiên bản mới nhất (Hợp đồng mới):** Phong bắn dữ liệu thô dạng cấu trúc (`event` + `data` + `severity`), ranh giới rõ ràng: Phong chịu trách nhiệm phát hiện sự kiện và logic nghiệp vụ, còn **Notification Service chịu trách nhiệm quy định template câu chữ / UI / hiển thị**. Service tự động ghép thông số vào template (có fallback nếu event chưa có template) và đẩy push Firebase tới đúng màn hình kiosk theo `deviceId`.
 
 ## Công Nghệ Sử Dụng
 
@@ -49,6 +51,7 @@ Server Phong ─POST /internal/notify (JSON)─► Notification Service ─FCM�
 - Cơ sở dữ liệu: MongoDB qua Mongoose (lưu FCM token + lịch sử thông báo)
 - Giao thức nhận thông báo: HTTP REST (`POST /internal/notify`) — Phong gọi sang, xác thực bằng `x-api-key`
 - **Dịch vụ push: Firebase Admin SDK 12 (FCM)** — trọng tâm module
+- **Template Engine**: Định nghĩa từ điển `EVENT_TEMPLATES` map `event → title / body` linh hoạt
 - Client màn hình: HTML/JS + **Firebase JS SDK (Web Push)** (notification-web)
 - Xác thực: **một API key dùng chung** (header `x-api-key`) cho cả `/internal/*` lẫn `/api/v1/*` — không còn user/JWT
 - Bảo mật: Helmet và CORS middleware
@@ -56,9 +59,10 @@ Server Phong ─POST /internal/notify (JSON)─► Notification Service ─FCM�
 
 ## Chức Năng Chính
 
-**Nhận thông báo qua API:** Server của Phong gọi `POST /internal/notify` (header `x-api-key`, body JSON kèm `deviceId`). Service xử lý ở `notificationService.ingest()`.
+**Nhận thông báo qua API:** Server của Phong gọi `POST /internal/notify` (header `x-api-key`, body JSON kèm `deviceId`, `event`, `severity`, `data`). Service xử lý ở `notificationService.ingest()`.
 
-**Chuyển tiếp trung thực (không dịch):** Service giữ nguyên payload, chỉ bóc mềm dẻo các field `title`/`body`/`severity`/`type` để đặt tiêu đề/nội dung push cho đẹp; ngoài `deviceId` (bắt buộc) không field nào khác bắt buộc.
+**Template Engine (Map event → câu chữ UI):** Dịch tự động từ mã máy `event` (như `water.empty`, `pump.on`, `battery.low`, `temp.high`...) và object `data` ra tiêu đề/nội dung thân thiện. Hỗ trợ fallback về `body` nếu event chưa đăng ký template.
+
 
 **Push qua Firebase (targeting theo device):** Mỗi tin chỉ gửi tới các token đã đăng ký **đúng deviceId** lấy từ body request (`fcmService.sendToDeviceId`) — mỗi màn hình chỉ nhận tin của cây mình. Push nổ cả khi trang/ứng dụng đóng. Token không còn hợp lệ được tự động xóa.
 
