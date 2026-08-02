@@ -18,7 +18,7 @@ Vấn đề cần giải quyết:
 - Thông báo phải hiển thị **realtime** và **đánh thức được** kể cả khi màn hình/ứng dụng không ở tiền cảnh → dùng Firebase push.
 - Nội dung thông báo do Phong quyết định — service không tự diễn giải lại, tránh sai lệch.
 
-Trong dự án, use-case cụ thể: mỗi cây trồng bằng AI có một **màn hình web (kiosk) đặt cạnh cây** để hiển thị thông báo.
+Trong dự án, use-case cụ thể: tích hợp **Trung tâm thông báo (Notification Center / Bell Component)** vào **Trang Web Application quản lý SmartFarm** (website của Thịnh), cho phép người dùng/chủ trang trại theo dõi thông báo realtime của tất cả các cây/thiết bị hoặc lọc theo từng cây.
 
 
 ## Kiến Trúc Tổng Thể Hệ Thống SmartFarm
@@ -29,20 +29,20 @@ Hệ thống SmartFarm gồm nhiều thành viên:
 - **Lĩnh** — AI Server, phân tích tình trạng cây.
 - **Phong** — Server điều khiển (.NET) và **MCP Server**: nhận dữ liệu, ra quyết định và **sinh thông báo**.
 - **Tân** — **Push Notification Service (Firebase)**: nhận thông báo từ Phong (qua API) và đẩy push tới người dùng.
-- **Thịnh** — Website quản lý SmartFarm.
+- **Thịnh** — Website quản lý SmartFarm (tích hợp Notification Center / Chuông thông báo).
 
 Luồng dữ liệu (mô hình hiện tại):
 
 ```
-Server Phong ─POST /internal/notify (JSON)─► Notification Service ─FCM─► Màn hình web kiosk cạnh cây
+Server Phong ─POST /internal/notify (JSON)─► Notification Service ─FCM─► Web App SmartFarm (Chuông notification & Notification Center)
 ```
 
-Điểm thiết kế quan trọng: server của Phong xử lý và phát hiện sự kiện xong rồi **gọi API `POST /internal/notify`** (kèm `deviceId`, mã `event`, mức độ `severity` và thông số thô `data` trong body). Notification Service sở hữu **lớp Template Engine (`templateEngine.js`)** để tự map từ mã `event` + `data` ra tiêu đề (`title`) và nội dung (`body`) trực quan trước khi đẩy push qua Firebase tới **đúng các màn hình đã đăng ký deviceId đó** (targeting theo thiết bị).
+Điểm thiết kế quan trọng: server của Phong xử lý và phát hiện sự kiện xong rồi **gọi API `POST /internal/notify`** (kèm `deviceId`, mã `event`, mức độ `severity` và thông số thô `data` trong body). Notification Service sở hữu **lớp Template Engine (`templateEngine.js`)** để tự map từ mã `event` + `data` ra tiêu đề (`title`) và nội dung (`body`) trực quan trước khi đẩy push qua Firebase tới **Web App quản lý SmartFarm** (hỗ trợ hiển thị toàn bộ hoặc lọc theo `deviceId`).
 
 > **Ghi chú tiến hoá:** 
 > - Phiên bản đầu của service tự "nghe ké" dữ liệu cảm biến qua MQTT.
 > - Giai đoạn 2: Phong chủ động bắn `title`/`body` sẵn qua API `POST /internal/notify` (pass-through).
-> - **Phiên bản mới nhất (Hợp đồng mới):** Phong bắn dữ liệu thô dạng cấu trúc (`event` + `data` + `severity`), ranh giới rõ ràng: Phong chịu trách nhiệm phát hiện sự kiện và logic nghiệp vụ, còn **Notification Service chịu trách nhiệm quy định template câu chữ / UI / hiển thị**. Service tự động ghép thông số vào template (có fallback nếu event chưa có template) và đẩy push Firebase tới đúng màn hình kiosk theo `deviceId`.
+> - **Phiên bản mới nhất (Hợp đồng mới):** Phong bắn dữ liệu thô dạng cấu trúc (`event` + `data` + `severity`), ranh giới rõ ràng: Phong chịu trách nhiệm phát hiện sự kiện và logic nghiệp vụ, còn **Notification Service chịu trách nhiệm quy định template câu chữ / UI / hiển thị**. Service tự động ghép thông số vào template (có fallback nếu event chưa có template) và đẩy push Firebase tới Web App quản lý SmartFarm (Notification Bell + Center, lọc theo `deviceId` hoặc xem tất cả).
 
 ## Công Nghệ Sử Dụng
 

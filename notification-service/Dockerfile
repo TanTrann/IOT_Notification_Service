@@ -6,7 +6,7 @@ WORKDIR /app
 
 # Cài dependency trước (tận dụng cache layer) — chỉ cần package*.json.
 COPY package*.json ./
-RUN npm ci --omit=dev
+RUN npm install --omit=dev
 
 # Copy phần còn lại của source (node_modules/.env/key đã bị .dockerignore loại).
 COPY . .

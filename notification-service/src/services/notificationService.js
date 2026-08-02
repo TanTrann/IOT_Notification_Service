@@ -82,30 +82,37 @@ class NotificationService {
   }
 
   async getByUser(deviceId, page = 1, limit = 20) {
+    const filter = (deviceId && deviceId !== 'all') ? { deviceId } : {};
     const [items, unreadCount] = await Promise.all([
-      Notification.find({ deviceId })
+      Notification.find(filter)
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit),
-      Notification.countDocuments({ deviceId, isRead: false }),
+      Notification.countDocuments({ ...filter, isRead: false }),
     ]);
     return { items, unreadCount };
   }
 
   async markRead(id, deviceId) {
+    const filter = { _id: id };
+    if (deviceId && deviceId !== 'all') filter.deviceId = deviceId;
     return Notification.findOneAndUpdate(
-      { _id: id, deviceId },
+      filter,
       { isRead: true },
       { new: true }
     );
   }
 
   async markAllRead(deviceId) {
-    return Notification.updateMany({ deviceId, isRead: false }, { isRead: true });
+    const filter = { isRead: false };
+    if (deviceId && deviceId !== 'all') filter.deviceId = deviceId;
+    return Notification.updateMany(filter, { isRead: true });
   }
 
   async getUnreadCount(deviceId) {
-    return Notification.countDocuments({ deviceId, isRead: false });
+    const filter = { isRead: false };
+    if (deviceId && deviceId !== 'all') filter.deviceId = deviceId;
+    return Notification.countDocuments(filter);
   }
 }
 

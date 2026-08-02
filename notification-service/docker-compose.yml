@@ -1,0 +1,27 @@
+name: iot-notification-local
+
+services:
+  notification:
+    image: ghcr.io/tantrann/iot_notification_service:latest
+    ports:
+      - "3001:3001"
+    env_file:
+      - .env
+    environment:
+      PORT: "3001"
+      NODE_ENV: development
+      MONGODB_URI: mongodb://mongodb:27017/notifications_db
+    depends_on:
+      - mongodb
+    restart: unless-stopped
+
+  mongodb:
+    image: mongo:7.0
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    restart: unless-stopped
+
+volumes:
+  mongodb_data:

@@ -22,7 +22,7 @@ services:
       PORT: "3001"
       NODE_ENV: production
       # Trỏ Mongo trong stack — dùng TÊN SERVICE "mongodb", KHÔNG dùng localhost.
-      MONGODB_URI: mongodb://mongodb:27017/iot_notifications
+      MONGODB_URI: mongodb://mongodb:27017/notifications_db
       # --- Firebase cách A (khuyến nghị): mount file key, KHÔNG set FIREBASE_PROJECT_ID/CLIENT_EMAIL/PRIVATE_KEY trong .env ---
       FIREBASE_SERVICE_ACCOUNT_PATH: /app/serviceAccountKey.json
     volumes:
