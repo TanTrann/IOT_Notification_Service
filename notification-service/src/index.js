@@ -17,12 +17,14 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
   .map(o => o.trim())
   .filter(Boolean);
 
-app.use(helmet());
 app.use(cors({
-  origin: allowedOrigins.length === 0 || allowedOrigins.includes('*')
-    ? '*'
-    : allowedOrigins,
+  origin: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key'],
+  credentials: true,
+  optionsSuccessStatus: 200,
 }));
+app.use(helmet({ crossOriginResourcePolicy: false }));
 app.use(compression());
 app.use(express.json());
 app.use(morgan(isProd ? 'combined' : 'dev'));
