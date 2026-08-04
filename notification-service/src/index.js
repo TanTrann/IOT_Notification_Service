@@ -19,13 +19,9 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
 
 app.use(helmet());
 app.use(cors({
-  origin(origin, cb) {
-    if (!origin) return cb(null, true);
-    if (allowedOrigins.length === 0 || allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
-      return cb(null, true);
-    }
-    return cb(null, false);
-  },
+  origin: allowedOrigins.length === 0 || allowedOrigins.includes('*')
+    ? '*'
+    : allowedOrigins,
 }));
 app.use(compression());
 app.use(express.json());
