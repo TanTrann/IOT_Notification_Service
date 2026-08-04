@@ -3,6 +3,6 @@
   "version": "1.0.0",
   "description": "Web nhận cảnh báo push từ IOT Notification Service",
   "scripts": {
-    "dev": "npx serve . -p 3000 --no-clipboard"
+    "dev": "npx serve . -p 3003 --no-clipboard"
   }
 }
