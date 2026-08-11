@@ -70,35 +70,42 @@ function api(path, opts = {}) {
 
 ## 3. REST API
 
-Base path: `/api/v1/notifications` · Header bắt buộc: `x-api-key` · Tham số bắt buộc: `deviceId`
-(qua `?deviceId=...` hoặc body).
+Base path: `/api/v1/notifications` · Header bắt buộc: `x-api-key` · Tham số bắt buộc: `deviceId` (qua query `?deviceId=...` hoặc body).
+
+> 💡 **Xem toàn bộ hệ thống hoặc từng cây:**
+> - Truyền `deviceId=<mã_cây>` (vd: `?deviceId=ESP32S3_Zone1`) để chỉ lấy/sửa thông báo của đúng cây đó.
+> - Truyền `deviceId=all` (vd: `?deviceId=all`) để lấy/sửa thông báo của **tất cả** các cây (rất hữu ích cho **Notification Center / Bell trên Web Dashboard quản lý chung của Thịnh**).
 
 | Method & path | Chức năng | Trả về |
 |---|---|---|
-| `GET /?deviceId=...&page=1&limit=20` | Danh sách thông báo của deviceId (mới nhất trước) | `{ success, items: [...], unreadCount }` |
-| `GET /unread-count?deviceId=...` | Đếm chưa đọc (cho badge) | `{ success, unreadCount }` |
+| `GET /?deviceId=...&page=1&limit=20` | Danh sách thông báo (mới nhất trước, hỗ trợ phân trang) | `{ success, items: [...], unreadCount }` |
+| `GET /unread-count?deviceId=...` | Đếm số tin chưa đọc (để hiển thị badge đỏ trên icon chuông) | `{ success, unreadCount }` |
 | `PATCH /:id/read?deviceId=...` | Đánh dấu 1 thông báo đã đọc | `{ success, data }` |
-| `PATCH /read-all?deviceId=...` | Đánh dấu tất cả đã đọc | `{ success, message }` |
+| `PATCH /read-all?deviceId=...` | Đánh dấu tất cả thông báo đã đọc | `{ success, message }` |
 
-> Đăng ký/hủy FCM token **không** nằm ở đây nữa — dùng `/internal/push/token` (xem mục 4).
+> Đăng ký/hủy FCM token dùng `/internal/push/token` (xem mục 4).
 
-Một item thông báo:
+Cấu trúc một item thông báo trả về từ MongoDB:
 
 ```json
 {
-  "_id": "66b...",
+  "_id": "66b1a2b3c4d5e6f7a8b9c0d1",
+  "eventId": "evt_20260811_001",
   "deviceId": "ESP32S3_Zone1",
-  "title": "Độ ẩm đất",
-  "body": "Độ ẩm đất hiện tại 22%.",
+  "event": "pump.on",
+  "title": "Đang tưới cây",
+  "body": "Đất 25% dưới ngưỡng 35%, bơm đang chạy",
   "type": "water",          // water | light | temperature | nutrition | disease | system
-  "severity": "warning",    // info | warning | critical
+  "severity": "info",       // info | warning | critical
   "isRead": false,
-  "data": { "...payload gốc từ thiết bị..." },
-  "createdAt": "2026-07-07T03:20:50.531Z"
+  "data": { "soilPercent": 25, "soilOnPct": 35 },
+  "createdAt": "2026-08-11T16:20:50.531Z"
 }
 ```
 
-Gợi ý UI: icon theo `type` (💧💡🌡️🌱🦠⚙️), màu theo `severity`.
+Gợi ý UI cho Web:
+- Icon theo `type`: 💧 (`water`), 💡 (`light`), 🌡️ (`temperature`), 🌱 (`nutrition`), 🦠 (`disease`), ⚙️ (`system`).
+- Màu sắc theo `severity`: Xanh/Xám (`info`), Vàng cam (`warning`), Đỏ (`critical`).
 
 ---
 

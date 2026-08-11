@@ -151,24 +151,40 @@ VAPID key dùng khi gọi `getToken(messaging, { vapidKey })` để lấy regist
 
 ## Phần D — Định dạng message server gửi đi
 
-Tham khảo [`src/services/fcmService.js`](../src/services/fcmService.js). Mỗi push gồm:
+Tham khảo [`src/services/fcmService.js`](../src/services/fcmService.js) và [`src/services/notificationService.js`](../src/services/notificationService.js). Sau khi qua Template Engine, gói tin push gửi qua FCM gồm:
 
 ```js
 {
   token,                                  // registration token của thiết bị
-  notification: { title, body },
-  data: { ...customData, clickAction: '/dashboard' },  // mọi value bị ép thành String
+  notification: { 
+    title,                                // do templateEngine render hoặc custom title
+    body                                  // do templateEngine render hoặc custom body
+  },
+  data: {
+    deviceId,                             // id thiết bị đích
+    event: event || '',                   // mã event (vd: "pump.on", "water.empty")
+    type: type || '',                     // danh mục ("water", "temperature", "system", ...)
+    severity: severity || '',             // mức độ ("info", "warning", "critical")
+    raw: JSON.stringify(payload),         // toàn bộ payload JSON gốc từ Phong
+    clickAction: '/dashboard'
+  },
   webpush: {
-    notification: { title, body, icon: '/logo.png', badge: '/badge.png', vibrate: [200,100,200] },
+    notification: { 
+      title, 
+      body, 
+      icon: '/logo.png', 
+      badge: '/badge.png', 
+      vibrate: [200, 100, 200] 
+    },
     fcmOptions: { link: '/dashboard' },
   },
 }
 ```
 
 Lưu ý:
-- **FCM bắt buộc mọi giá trị trong `data` là chuỗi** → code tự `String(v)` toàn bộ.
+- **FCM bắt buộc mọi giá trị trong `data` là chuỗi** → code tự ép kiểu `String(v)` toàn bộ.
 - Nếu token không còn hợp lệ (`messaging/registration-token-not-registered`), service **tự xóa** token đó khỏi MongoDB.
-- `sendToDeviceId(deviceId, …)` tìm **các token có đúng `deviceId`** trong `fcmtokens` và gửi song song (targeting theo thiết bị — mỗi màn hình chỉ nhận tin của cây mình). `sendToDevice(token, …)` gửi tới 1 token cụ thể (được `sendToDeviceId` gọi bên trong).
+- `sendToDeviceId(deviceId, …)` tìm **các token có đúng `deviceId`** trong `fcmtokens` và gửi song song (targeting theo thiết bị — mỗi màn hình chỉ nhận tin của cây mình). `sendToDevice(token, …)` gửi tới 1 token cụ thể.
 
 ---
 

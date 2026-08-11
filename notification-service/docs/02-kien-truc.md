@@ -2,14 +2,13 @@
 
 Tài liệu mô tả kiến trúc của **IOT Notification Service** — vai trò từng thành phần, cách chúng kết nối và mô hình dữ liệu.
 
-> **Mô hình hiện tại (Firebase-only, targeting theo deviceId):** Phong xử lý thông báo xong rồi
-> **`POST /internal/notify`** (header `x-api-key`, body kèm `deviceId`) sang service — **không còn
-> nghe ké MQTT**. Service **không dịch/biến đổi** payload, và **push qua Firebase (FCM)** tới **đúng**
-> các client đã đăng ký cùng `deviceId` đó — mỗi màn hình kiosk chỉ nhận tin của cây mình đứng cạnh.
-> Màn hình hiển thị (kiosk web cạnh cây) nhận qua **Firebase Web Push**. Đã gỡ bỏ: nghe MQTT
-> (`mqttHandler`/`config/mqtt.js`), SSE/`displayHub`, luồng dịch sensor/ngưỡng, **và toàn bộ lớp
-> user/đăng nhập/JWT** — mọi endpoint HTTP nay xác thực bằng một **API key** chung (`x-api-key`).
-> Lịch sử thông báo vẫn được ghi vào MongoDB.
+> **Mô hình hiện tại (Firebase-only, Template Engine, targeting theo deviceId):** 
+> - Phong xử lý điều khiển/phát hiện sự kiện xong rồi gọi **`POST /internal/notify`** (header `x-api-key`, body gồm `deviceId`, mã `event`, `severity` và dữ liệu `data`) sang service — **không còn nghe ké MQTT**.
+> - Service tích hợp lớp **Template Engine (`templateEngine.js`)** để tự động map từ `event` + `data` ra tiêu đề (`title`) và nội dung (`body`) trực quan trước khi đẩy push.
+> - **Push qua Firebase (FCM)** tới **đúng** các client đã đăng ký cùng `deviceId` đó (`fcmService.sendToDeviceId`) — mỗi màn hình kiosk chỉ nhận tin của cây mình đứng cạnh.
+> - Màn hình hiển thị (kiosk web / Website SmartFarm) nhận qua **Firebase Web Push** (onMessage khi mở tab, Service Worker khi tab đóng).
+> - Đã gỡ bỏ: nghe MQTT (`mqttHandler`/`config/mqtt.js`), SSE/`displayHub`, luồng dịch sensor/ngưỡng cũ, **và toàn bộ lớp user/đăng nhập/JWT** — mọi endpoint HTTP nay xác thực bằng một **API key** chung (`x-api-key`).
+> - Lịch sử thông báo được lưu trữ bền vững vào MongoDB để REST đọc lại (hỗ trợ lọc theo từng `deviceId` hoặc xem tất cả `deviceId=all`).
 
 ---
 
@@ -17,35 +16,36 @@ Tài liệu mô tả kiến trúc của **IOT Notification Service** — vai tr�
 
 ```
 ┌──────────────┐
-│ Server Phong │  — xử lý & sinh thông báo JSON, kèm deviceId
+│ Server Phong │  — xử lý nghiệp vụ, phát hiện sự kiện (Event-Driven)
 └──────┬───────┘
-       │ POST /internal/notify  (x-api-key; body { deviceId, title, body, ... })
+       │ POST /internal/notify  (x-api-key; body { deviceId, event, data, severity, eventId })
        ▼
-╔══════════════════════════════════════════════════════════════════╗
-║              IOT NOTIFICATION SERVICE (Node.js)                  ║
-║                                                                  ║
-║   ┌──────────────────────────┐  parse JSON — KHÔNG dịch/biến đổi   ║
-║   │ POST /internal/notify     │  deviceId lấy từ body               ║
-║   │  → notificationService    │  ghi lịch sử vào MongoDB (best-eff) ║
-║   │      .ingest()            │                                     ║
-║   └──────┬───────────────────┘                                     ║
-║          │                                                         ║
-║          └──► fcmService.sendToDeviceId ──► Firebase Admin (FCM)   ║
-║                (chỉ token cùng deviceId)                            ║
-║                                                                    ║
-║   ┌───────────── HTTP API (Express) ───────────────────────────┐  ║
-║   │ /internal/notify       [x-api-key]  Phong gửi thông báo vào │  ║
-║   │ /internal/push/token   [x-api-key]  đăng ký/hủy FCM token   │  ║
-║   │ /api/v1/notifications  [x-api-key]  REST (web, đọc DB)      │  ║
-║   │                        lọc theo ?deviceId=...               │  ║
-║   └────────────────────────────────────────────────────────────┘  ║
-╚══════════════════════════════════════════════════════════════════╝
-                              │ push (FCM, theo deviceId)
-                              ▼
-                  ┌──────────────────────────┐
-                  │  Web kiosk cạnh cây       │  Firebase Web Push
-                  │  (notification-web)       │  onMessage → danh sách trong trang
-                  └──────────────────────────┘
+╔═════════════════════════════════════════════════════════════════════════════╗
+║                      IOT NOTIFICATION SERVICE (Node.js)                     ║
+║                                                                             ║
+║   ┌──────────────────────────┐   1. Nhận request & xác thực API key         ║
+║   │ POST /internal/notify     │   2. Gọi templateEngine.formatEventPayload() ║
+║   │  → notificationService    │      (Map event + data -> title, body)      ║
+║   │      .ingest()            │   3. Ghi lịch sử vào MongoDB (best-effort)   ║
+║   └──────┬───────────────────┘                                              ║
+║          │                                                                  ║
+║          └──► fcmService.sendToDeviceId ──► Firebase Admin SDK (FCM)        ║
+║                (tra token theo deviceId & push song song)                   ║
+║                                                                             ║
+║   ┌───────────── HTTP API (Express) ──────────────────────────────────┐     ║
+║   │ /internal/notify       [x-api-key]  Phong gửi sự kiện vào         │     ║
+║   │ /internal/push/token   [x-api-key]  đăng ký/hủy FCM token         │     ║
+║   │ /api/v1/notifications  [x-api-key]  REST (lịch sử, đọc/đếm unread)│     ║
+║   │                        lọc theo ?deviceId=... (hoặc ?deviceId=all)│     ║
+║   └───────────────────────────────────────────────────────────────────┘     ║
+╚═════════════════════════════════════════════════════════════════════════════╝
+                               │ push (FCM, theo deviceId)
+                               ▼
+                   ┌──────────────────────────┐
+                   │  Web kiosk / Web App     │  Firebase Web Push
+                   │  (notification-web)       │  - onMessage (tab mở: toast + bell)
+                   │                          │  - Service Worker (tab đóng)
+                   └──────────────────────────┘
 ```
 
 ---
@@ -54,42 +54,41 @@ Tài liệu mô tả kiến trúc của **IOT Notification Service** — vai tr�
 
 | Đầu vào | Nguồn | Xử lý bởi |
 |---|---|---|
-| **Thông báo từ Phong** | `POST /internal/notify` (x-api-key, body kèm `deviceId`) | `internalRoutes` → `notificationService.ingest` → `fcmService.sendToDeviceId` |
-| **Đăng ký/hủy push** | `POST\|DELETE /internal/push/token` (x-api-key, body kèm `deviceId`) | `internalRoutes` → lưu/xóa `fcmtokens` |
+| **Sự kiện từ Phong** | `POST /internal/notify` (x-api-key, body kèm `deviceId`, `event`, `data`, `severity`, `eventId`) | `internalRoutes` → `notificationService.ingest` → `templateEngine` → `fcmService.sendToDeviceId` |
+| **Đăng ký/hủy push** | `POST\|DELETE /internal/push/token` (x-api-key, body kèm `deviceId`, `token`) | `internalRoutes` → lưu/xóa `fcmtokens` |
 | **Yêu cầu từ web (REST)** | `/api/v1/notifications/*` (x-api-key, `?deviceId=...`) | `routes` → `controller` → `notificationService` (đọc DB) |
-
-> Payload là **JSON object bất kỳ**; `deviceId` lấy từ body. Service chỉ bóc `title`/`body`/
-> `severity`/`type` để đặt tiêu đề/nội dung push cho đẹp — ngoài `deviceId` (bắt buộc), **không bắt
-> buộc** field nào khác, không đổi dữ liệu gốc.
 
 ---
 
 ## 3. Các thành phần (lớp xử lý)
 
 ### 3.1. Điểm khởi động — `src/index.js`
-Khởi tạo theo thứ tự: nạp `.env` → init Firebase → kết nối MongoDB → khởi động Express. Cung cấp `GET /health`. Lỗi tập trung tại error handler cuối. (Không còn MQTT listener.)
+Khởi tạo theo thứ tự: nạp `.env` → init Firebase Admin → kết nối MongoDB → khởi động Express (cấu hình CORS, Helmet, Compression, Morgan). Cung cấp endpoint kiểm tra sức khỏe `GET /health`.
 
 ### 3.2. Tầng cấu hình — `src/config/`
 | File | Trách nhiệm |
 |---|---|
-| `firebase.js` | Khởi tạo Firebase Admin SDK (env hoặc serviceAccountKey.json) — **cốt lõi phần push** |
-| `database.js` | Kết nối MongoDB (lưu FCM token + lịch sử; REST đọc) |
+| `firebase.js` | Khởi tạo Firebase Admin SDK (qua biến môi trường `FIREBASE_*` hoặc file `serviceAccountKey.json`) — **cốt lõi phần push** |
+| `database.js` | Kết nối MongoDB qua Mongoose (lưu FCM token + lịch sử thông báo; phục vụ REST đọc) |
 
-### 3.3. Tầng dịch vụ — `src/services/`
+### 3.3. Tầng tiện ích — `src/utils/`
+| File | Trách nhiệm |
+|---|---|
+| `templateEngine.js` | Sở hữu từ điển `EVENT_TEMPLATES`. Map mã sự kiện (`pump.on`, `water.empty`, `battery.low`, `temp.high`, `device.offline`...) + object `data` $\rightarrow$ `{ title, body, severity, type }`. Hỗ trợ fallback an toàn và giữ nguyên custom title/body nếu Phong gửi sẵn. |
+| `asyncHandler.js` | Bọc các handler async để bắt lỗi tập trung, trả về middleware error handler. |
+
+### 3.4. Tầng dịch vụ — `src/services/`
 | File | Trách nhiệm chính |
 |---|---|
-| `notificationService.js` | `ingest(payload, deviceId)`: chuẩn hóa (bóc `title`/`body`/`type`/`severity`), ghi lịch sử vào MongoDB (best-effort, chống trùng qua `eventId` nếu có) rồi gọi `fcmService.sendToDeviceId()`. Không dịch/biến đổi. Cộng thêm phần **đọc** cho REST web (lọc theo `deviceId`): `getByUser()`, `markRead()`, `markAllRead()`, `getUnreadCount()`. |
-| `fcmService.js` | `sendToDevice(token, …)` (1 token) và `sendToDeviceId(deviceId, …)` (gửi tới các token có đúng `deviceId`); tự xóa token chết khi Firebase báo không hợp lệ. Không còn `sendToAll`. |
+| `notificationService.js` | `ingest(payload, deviceId)`: format payload qua `templateEngine`, chuẩn hóa severity/type, ghi lịch sử vào MongoDB (best-effort, chống trùng qua `eventId`), gọi `fcmService.sendToDeviceId()`. Cung cấp các hàm đọc cho REST web: `getByUser(deviceId, page, limit)` (hỗ trợ `all`), `markRead()`, `markAllRead()`, `getUnreadCount()`. |
+| `fcmService.js` | `sendToDevice(token, …)` (1 token) và `sendToDeviceId(deviceId, …)` (gửi tới mọi token có đúng `deviceId`); tự động xóa token chết khi Firebase báo `registration-token-not-registered`. |
 
-### 3.4. Tầng API — `routes` / `controllers` / `middlewares`
-- `routes/internalRoutes.js`: `POST /internal/notify` — Phong gửi thông báo vào (body kèm `deviceId` bắt buộc); `POST|DELETE /internal/push/token` — đăng ký/hủy FCM token (body kèm `deviceId` bắt buộc khi đăng ký). Bảo vệ bằng **API key** (`internalAuth`).
-- `routes/notificationRoutes.js` + `controllers/notificationController.js`: `/api/v1/notifications/*` cho web — cũng bảo vệ bằng **cùng API key** (`internalAuth`); lấy `deviceId` từ `?deviceId=...` (hoặc body).
+### 3.5. Tầng API — `routes` / `controllers` / `middlewares`
+- `routes/internalRoutes.js`: 
+  - `POST /internal/notify`: Phong gửi thông báo/sự kiện vào (body kèm `deviceId` bắt buộc).
+  - `POST|DELETE /internal/push/token`: Web client đăng ký/hủy FCM token kèm `deviceId`.
+- `routes/notificationRoutes.js` + `controllers/notificationController.js`: `/api/v1/notifications/*` cho web đọc lịch sử, đếm chưa đọc, đánh dấu đã đọc.
 - `middlewares/internalAuth.js`: kiểm tra `x-api-key` header, dùng chung cho cả `/internal/*` lẫn `/api/v1/notifications`.
-- `utils/asyncHandler.js`: bọc handler async để bắt lỗi tập trung.
-
-> Đã **xóa** hoàn toàn lớp user/đăng nhập: `routes/authRoutes.js`, `controllers/authController.js`,
-> `models/User.js`, `middlewares/auth.js`, `seed-users.js`, `generate-token.js`. `.env` không còn
-> `JWT_SECRET`/`JWT_EXPIRES`; chỉ còn `INTERNAL_API_KEY` dùng chung cho mọi endpoint HTTP.
 
 ---
 
@@ -97,24 +96,44 @@ Khởi tạo theo thứ tự: nạp `.env` → init Firebase → kết nối Mon
 
 | Kênh | Cách gửi | Client nhận |
 |---|---|---|
-| **FCM push** | `fcmService.sendToDeviceId` → Firebase Admin `messaging.send()` (chỉ token cùng `deviceId`) | Web kiosk qua **Firebase Web Push** (SDK JS + service worker): `onMessage` (tab mở) hiện danh sách trong trang; service worker hiện khi tab đóng |
-
-> Đã **bỏ SSE**. Màn hình hiển thị dựa hoàn toàn vào Firebase Web Push. Chi tiết luồng xem
-> [03-luong-hoat-dong.md](03-luong-hoat-dong.md); cấu hình Firebase 2 phía xem [01-firebase-setup.md](01-firebase-setup.md).
+| **FCM push** | `fcmService.sendToDeviceId` → Firebase Admin `messaging.send()` (chỉ token cùng `deviceId`) | Web kiosk/Web App qua **Firebase Web Push** (SDK JS + service worker): `onMessage` (tab mở) hiện toast + badge chuông; service worker (`firebase-messaging-sw.js`) hiện thông báo hệ thống khi tab đóng |
 
 ---
 
 ## 5. Mô hình dữ liệu (MongoDB)
 
-> Lưu ý: `notificationService.ingest` **ghi mỗi tin vào collection `notifications`** (best-effort — lỗi ghi DB không
-> chặn việc đẩy push), đồng thời push qua FCM theo `deviceId`. Màn hình kiosk hiện danh sách realtime
-> từ chính message FCM (`onMessage`); REST `/api/v1/notifications?deviceId=...` đọc lại lịch sử bền
-> vững từ DB. `fcmtokens` và `notifications` đều được dùng đầy đủ.
-
 ### Collection `fcmtokens`
 | Trường | Kiểu | Ghi chú |
 |---|---|---|
-| `deviceId` | String | **bắt buộc** — danh tính của màn hình kiosk (cây/thiết bị nó đứng cạnh), client gửi kèm khi đăng ký qua `/internal/push/token` |
+| `deviceId` | String | **bắt buộc** — định danh thiết bị/cây mà màn hình đứng cạnh, client gửi kèm khi đăng ký qua `/internal/push/token` |
+| `token` | String | **unique** — Firebase registration token của trình duyệt / app |
+| `device` | String | enum: `web`, `android`, `ios` (mặc định `web`) |
+| `createdAt`/`updatedAt` | Date | tự động |
+
+### Collection `notifications` (ghi khi nhận `/internal/notify`, phục vụ REST đọc)
+| Trường | Kiểu | Ghi chú |
+|---|---|---|
+| `eventId` | String | Unique index (sparse) — mã sự kiện duy nhất để chống trùng lặp khi retry |
+| `deviceId` | String | **bắt buộc** — định danh cây/thiết bị |
+| `event` | String | Mã sự kiện thô (`pump.on`, `water.needed`...) |
+| `title` | String | Tiêu đề kết xuất từ templateEngine |
+| `body` | String | Nội dung kết xuất từ templateEngine |
+| `type` | String | enum: `disease`, `water`, `nutrition`, `light`, `temperature`, `system` |
+| `severity` | String | enum: `info`, `warning`, `critical` |
+| `data` | Mixed | Dữ liệu thô kèm theo |
+| `isRead` | Boolean | Trạng thái đã đọc (mặc định `false`) |
+| `createdAt` | Date | Thời gian nhận thông báo |
+
+---
+
+## 6. Nguyên tắc thiết kế
+
+- **Firebase là trung tâm:** Deliverable của module là push qua Firebase — mọi thông báo đi qua FCM.
+- **Ranh giới rõ ràng:** Phong chịu trách nhiệm phát hiện sự kiện và logic nghiệp vụ, Notification Service chịu trách nhiệm **Template Engine câu chữ / hiển thị và kênh Push**.
+- **Targeting theo `deviceId`:** Mỗi màn hình đăng ký token kèm `deviceId` của cây nó đứng cạnh $\rightarrow$ chỉ nhận push của đúng cây đó.
+- **Push và lịch sử khớp nhau:** Push (`sendToDeviceId`) và REST lịch sử (lọc `?deviceId=...`) đều theo cùng `deviceId` $\rightarrow$ nhất quán.
+- **Chống trùng khi retry:** Nhận diện `eventId` / `id` để upsert vào DB, tránh lặp tin khi server Phong retry.
+- **Một API key chung:** Mọi endpoint HTTP (`/internal/*` lẫn `/api/v1/notifications`) xác thực bằng cùng `x-api-key`. Không còn user/JWT.push/token` |
 | `token` | String | **unique** — Firebase registration token |
 | `device` | String | enum: `web`, `android`, `ios` |
 | `createdAt`/`updatedAt` | Date | tự động |

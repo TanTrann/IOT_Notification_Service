@@ -1,12 +1,14 @@
 # Luồng hoạt động
 
 Tài liệu mô tả các luồng chạy thực tế theo **mô hình hiện tại** (Phong `POST /internal/notify`,
-không dịch, **push qua Firebase theo `deviceId`** — mỗi màn hình chỉ nhận tin của cây mình; đã bỏ
+xử lý qua **Template Engine**, **push qua Firebase theo `deviceId`** — mỗi màn hình chỉ nhận tin của cây mình; đã bỏ
 nghe MQTT, bỏ SSE và bỏ luôn lớp user/đăng nhập/JWT).
 
 1. [Khởi động service](#1-luồng-khởi-động)
-2. [Thông báo từ Phong → push Firebase](#2-luồng-thông-báo)
+2. [Thông báo từ Phong → Template Engine → push Firebase](#2-luồng-thông-báo)
 3. [Client đăng ký & nhận push (Firebase Web Push)](#3-luồng-client)
+4. [Cơ chế đảm bảo chất lượng](#4-cơ-chế-đảm-bảo-chất-lượng)
+5. [Cách thử nhanh (end-to-end)](#5-cách-thử-nhanh-end-to-end)
 
 ---
 
@@ -15,33 +17,34 @@ nghe MQTT, bỏ SSE và bỏ luôn lớp user/đăng nhập/JWT).
 ```
 npm start → src/index.js
    1. dotenv          → nạp biến môi trường từ .env
-   2. firebase.js     → init Firebase Admin (log thành công / cảnh báo)
-   3. database.js     → kết nối MongoDB (lưu FCM token + lịch sử)
+   2. firebase.js     → init Firebase Admin SDK (log thành công / cảnh báo)
+   3. database.js     → kết nối MongoDB bắt buộc (lưu FCM token + lịch sử)
    4. Express         → middleware (helmet, cors, compression, morgan)
                       → mount /internal, /api/v1/notifications  (đều dùng x-api-key)
                       → GET /health
    5. listen PORT (mặc định 3001)
 ```
 
-> Thiếu MONGODB_URI / Firebase credentials → ghi cảnh báo và **vẫn tiếp tục chạy**.
-
 ---
 
 ## 2. Luồng thông báo
 
-**Kích hoạt:** server của Phong xử lý xong một thông báo rồi `POST /internal/notify` (kèm header
-`x-api-key`, body là JSON có `deviceId`). Service **không dịch/biến đổi** — lưu lịch sử rồi push qua
-Firebase tới **đúng** các màn hình đã đăng ký `deviceId` đó.
+**Kích hoạt:** server của Phong xử lý xong một sự kiện nghiệp vụ rồi gọi `POST /internal/notify` (kèm header
+`x-api-key`, body gồm `deviceId`, mã `event`, object `data`, `severity`, `eventId`).
 
 ```
 Phong ──POST /internal/notify──► IOT Notification Service
-       (x-api-key; body { deviceId, title, body, ... })
+       (x-api-key; body { deviceId, event, data, severity, eventId })
                           │
                           ▼
                   internalRoutes → notificationService.ingest(payload, deviceId)
-                          │ chuẩn hóa title/body/type/severity (không đổi payload gốc)
-                          │ deviceId lấy từ body (thiếu → HTTP 400)
-                          │ ghi lịch sử vào MongoDB (best-effort, chống trùng qua eventId)
+                          │ 
+                          ├─► 1. templateEngine.formatEventPayload(payload)
+                          │      Map event + data -> { title, body, severity, type }
+                          │      (Có fallback nếu event mới; hỗ trợ custom title/body)
+                          │
+                          ├─► 2. Ghi lịch sử vào MongoDB (best-effort, chống trùng qua eventId)
+                          │
                           ▼
                   fcmService.sendToDeviceId(deviceId, { title, body, data })
                           │  tìm các token có ĐÚNG deviceId trong fcmtokens
@@ -50,34 +53,37 @@ Phong ──POST /internal/notify──► IOT Notification Service
                           (token chết tự bị xóa)
 ```
 
-### Body mẫu (JSON, `deviceId` bắt buộc)
+### Body mẫu từ Phong (JSON, `deviceId` bắt buộc)
 ```json
-{ "deviceId": "ESP32S3_Zone1", "title": "Cây thiếu nước", "body": "Độ ẩm đất 22% — cần tưới ngay", "severity": "warning", "type": "water", "id": "evt-1001" }
+{
+  "deviceId": "ESP32S3_Zone1",
+  "event": "pump.on",
+  "data": {
+    "soilPercent": 25,
+    "soilOnPct": 35
+  },
+  "severity": "info",
+  "eventId": "evt_20260811_001"
+}
 ```
 
-Service trả `202 { success: true, deviceId, title, body, recipients }`. `recipients` = số màn hình đã đăng ký đúng `deviceId` này; **`recipients: 0` nghĩa là không màn hình nào khớp `deviceId`** (thường do gửi sai `deviceId`) — dù `success: true` vì lịch sử vẫn được lưu.
-
-### Bóc field để đặt push (chỉ để đẹp, không bắt buộc — trừ `deviceId`)
-- **title**: `title` · `tieu_de` · `name` · `event`
-- **body**: `body` · `message` · `msg` · `content` · `noi_dung` · `description`
-- **type**: `type` · `category` · `loai`
-- **severity**: `severity` · `level` · `muc_do` · `priority`
-- **eventId** (chống trùng khi retry): `eventId` · `event_id` · `id`
-
-`deviceId` + payload gốc (`raw`) được gửi kèm trong phần `data` của message FCM để client dùng nếu cần.
+Service trả `202 { success: true, deviceId, event, title, body, recipients }`. 
+- `title`: `"Đang tưới cây"` *(sinh bởi Template Engine)*
+- `body`: `"Đất 25% dưới ngưỡng 35%, bơm đang chạy"` *(sinh bởi Template Engine)*
+- `recipients`: số token/thiết bị nhận được push (`recipients: 0` nghĩa là chưa có client nào đăng ký `deviceId` này).
 
 ---
 
 ## 3. Luồng client (Firebase Web Push)
 
-Màn hình cạnh cây là trang `notification-web` chạy full-screen, dùng Firebase JS SDK.
+Màn hình cạnh cây là trang `notification-web` hoặc Web App SmartFarm tích hợp Firebase JS SDK.
 
 ### 3.1. Đăng ký nhận push (1 lần / thiết bị)
 ```
-Web kiosk
-   1. xin quyền notification (browser)
+Web client
+   1. Xin quyền notification (browser Notification.requestPermission())
    2. getToken({ vapidKey }) → registration token
-   3. đăng ký token về service:
+   3. Đăng ký token về service:
         POST /internal/push/token  (header x-api-key)
         body { token, deviceId, device: 'web' }   ← deviceId của cây màn hình đứng cạnh
               │
@@ -87,9 +93,9 @@ Web kiosk
 
 ### 3.2. Nhận & hiển thị
 ```
-fcmService.sendToDeviceId ──► Firebase ──► web kiosk (đúng deviceId)
+fcmService.sendToDeviceId ──► Firebase ──► web client (đúng deviceId)
    - Tab đang mở (foreground): messaging.onMessage(payload)
-        → dựng 1 mục thông báo từ payload → thêm vào ĐẦU danh sách trong trang (unshift)
+        → Toast hiển thị trong trang + tăng badge chưa đọc + cập nhật danh sách
    - Tab đóng/nền: service worker firebase-messaging-sw.js hiển thị notification hệ thống
 ```
 
@@ -103,28 +109,42 @@ fcmService.sendToDeviceId ──► Firebase ──► web kiosk (đúng deviceI
 
 | Cơ chế | Mục đích | Vị trí |
 |---|---|---|
-| Không dịch/biến đổi payload | Hiển thị đúng nguyên tin Phong gửi | `notificationService.ingest()` |
-| FCM best-effort (không chặn) | Lỗi ghi DB không làm gãy việc push | `notificationService.ingest()` |
-| Chống trùng qua `eventId` | Phong retry không tạo bản ghi lặp | `notificationService._saveHistory()` |
-| Tự xóa token chết | Giữ DB token sạch | `fcmService.sendToDevice()` |
-| Graceful degradation | Không crash khi thiếu cấu hình | `index.js` + các config |
+| **Template Engine tự động** | Chuẩn hóa câu chữ tiếng Việt, tách biệt logic nghiệp vụ khỏi UI | `src/utils/templateEngine.js` |
+| **Fallback an toàn** | Không crash/mất tin khi nhận event chưa từng khai báo | `templateEngine.formatEventPayload()` |
+| **FCM best-effort (không chặn)** | Lỗi ghi DB không làm gãy việc push realtime | `notificationService.ingest()` |
+| **Chống trùng qua `eventId`** | Phong retry không tạo bản ghi lặp trong MongoDB | `notificationService._saveHistory()` |
+| **Tự xóa token chết** | Giữ DB token sạch khi người dùng gỡ app/xóa quyền push | `fcmService.sendToDevice()` |
+| **Bảo vệ xác thực tập trung** | Dùng chung 1 API key qua `x-api-key` | `middlewares/internalAuth.js` |
 
 ---
 
 ## 5. Cách thử nhanh (end-to-end)
 
-1. Chạy service: `cd notification-service && npm run dev` (cần Firebase credentials trong `.env`).
-2. Mở màn hình kiosk: `npx serve notification-web -l 3000` → mở `http://localhost:3000` full-screen →
-   bấm ⚙️ nhập **Server URL + Device ID + API key** (bằng `INTERNAL_API_KEY`) → Lưu →
-   **Bật nhận push** (cấp quyền browser). Token được đăng ký kèm đúng Device ID vừa nhập.
-3. Bắn thử một thông báo (giả lập Phong gọi `POST /internal/notify`):
-   `node scripts/publish-test.js` (mặc định deviceId `ESP32S3_Zone1`; hoặc
-   `node scripts/publish-test.js '{"title":"...","body":"..."}' <deviceId>`)
-   → tin hiện ngay trên màn hình có **cùng Device ID** (Firebase Web Push, `onMessage`).
+1. Chạy service: `cd notification-service && npm run dev`.
+2. Mở màn hình web: `cd notification-web && npm run dev` → mở `http://localhost:3000` →
+   bấm ⚙️ nhập **Server URL (`http://localhost:3001`) + Device ID (`ESP32S3_Zone1`) + API key** (chính là `INTERNAL_API_KEY`) → Lưu →
+   **Bật nhận push** (cấp quyền browser).
+3. Bắn thử một sự kiện (giả lập Phong gọi `POST /internal/notify`):
+   ```bash
+   cd notification-service
+   node scripts/publish-test.js
+   ```
+   Hoặc truyền payload custom:
+   ```bash
+   node scripts/publish-test.js '{"event":"water.empty","data":{}}' ESP32S3_Zone1
+   ```
 
    Hoặc gọi trực tiếp bằng curl:
    ```bash
    curl -X POST http://localhost:3001/internal/notify \
-     -H "Content-Type: application/json" -H "x-api-key: <INTERNAL_API_KEY>" \
-     -d '{"deviceId":"ESP32S3_Zone1","title":"Cây thiếu nước","body":"Độ ẩm đất 22%","severity":"warning","type":"water"}'
+     -H "Content-Type: application/json" \
+     -H "x-api-key: <INTERNAL_API_KEY>" \
+     -d '{
+       "deviceId": "ESP32S3_Zone1",
+       "event": "temp.high",
+       "data": { "temperature": 38.5 },
+       "severity": "warning",
+       "eventId": "evt_test_001"
+     }'
    ```
+   $\rightarrow$ Màn hình web lập tức nổ thông báo: **"Nhiệt độ cao — 38.5°C, cây có thể bị stress nhiệt"**.

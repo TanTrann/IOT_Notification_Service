@@ -99,15 +99,15 @@ Collection `notifications` (ghi khi nhận `/internal/notify`, phục vụ REST 
 Tất cả xác thực bằng **một API key chung** qua header `x-api-key` (không còn user/JWT).
 
 Nhận thông báo từ Phong (`/internal/*`):
-- `POST /internal/notify` — Phong gửi thông báo vào, body `{ deviceId, title, body, type?, severity?, id?, ... }` (`deviceId` bắt buộc). Trả `202`.
+- `POST /internal/notify` — Phong gửi sự kiện vào, body `{ deviceId, event, data, severity, eventId, title?, body? }` (`deviceId` bắt buộc). Trả `202`.
 
 Đăng ký nhận push (`/internal/*`):
 - `POST /internal/push/token` — đăng ký FCM token, body kèm `{ token, deviceId, device }`.
 - `DELETE /internal/push/token` — hủy FCM token.
 
 Đọc lịch sử (`/api/v1/notifications`, lọc theo `?deviceId=...`):
-- `GET /api/v1/notifications?deviceId=...` — danh sách + đếm chưa đọc.
-- `GET /api/v1/notifications/unread-count?deviceId=...` — đếm chưa đọc.
+- `GET /api/v1/notifications?deviceId=...` — danh sách + đếm chưa đọc (hỗ trợ `deviceId=all` để xem toàn bộ trang trại).
+- `GET /api/v1/notifications/unread-count?deviceId=...` — đếm chưa đọc (hỗ trợ `deviceId=all`).
 - `PATCH /api/v1/notifications/:id/read?deviceId=...` và `/read-all?deviceId=...` — đánh dấu đã đọc.
 
 Khác: `GET /health` — kiểm tra service (không cần key).
@@ -117,17 +117,15 @@ Khác: `GET /health` — kiểm tra service (không cần key).
 
 **Firebase là trung tâm:** toàn bộ thông báo đi qua FCM — đúng phần việc "Push Notification với Firebase".
 
-**Chuyển tiếp trung thực:** hiển thị đúng nguyên JSON Phong gửi; client luôn có thể xem dữ liệu gốc.
+**Template Engine thông minh:** Tự động map `event` + `data` ra tiêu đề (`title`) và nội dung (`body`) trực quan, hỗ trợ fallback an toàn và custom title/body ghi đè.
 
 **Targeting theo thiết bị:** mỗi màn hình chỉ nhận tin của cây mình (`sendToDeviceId`) — deviceId trong body request khớp deviceId token đã đăng ký. Đơn giản, không cần user/đăng nhập.
 
-**Web Push cho màn kiosk:** dùng Firebase JS SDK — `onMessage` hiện realtime khi trang mở, service worker hiện khi trang đóng; không cần kênh trung gian.
+**Web Push cho màn kiosk & Web App:** dùng Firebase JS SDK — `onMessage` hiện realtime khi trang mở, service worker hiện khi trang đóng; không cần kênh trung gian.
 
 **FCM best-effort:** lỗi ghi DB không làm gãy việc push; token chết tự bị xóa khỏi DB.
 
 **Chống trùng khi retry:** nếu Phong gửi kèm `id`/`eventId`, service dùng làm khóa upsert — Phong gọi lại cùng tin không tạo bản ghi lặp.
-
-**Khởi động an toàn:** service vẫn chạy dù thiếu Firebase hoặc MongoDB — ghi log cảnh báo và tiếp tục.
 
 
 ## Kết Quả Đạt Được
