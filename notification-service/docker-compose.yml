@@ -11,6 +11,10 @@ services:
       PORT: "3001"
       NODE_ENV: development
       MONGODB_URI: mongodb://mongodb:27017/notifications_db
+      # Server Phong chạy trên máy host (Docker deploy 8080) — container gọi qua host.docker.internal
+      PLANT_API_URL: http://host.docker.internal:8080
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - mongodb
     restart: unless-stopped

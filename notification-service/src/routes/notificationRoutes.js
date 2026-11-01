@@ -6,16 +6,16 @@ import {
   markAllRead,
   markRead,
 } from '../controllers/notificationController.js';
-import { internalAuth } from '../middlewares/internalAuth.js';
+import { userAuth } from '../middlewares/userAuth.js';
 
 const router = Router();
 
-// Đọc lịch sử + trạng thái thông báo cho màn hình kiosk. Lọc theo ?deviceId=...
-// Không còn user/JWT — bảo vệ bằng API key (x-api-key) giống các endpoint nội bộ khác.
-// Đăng ký/hủy FCM token nay dùng /internal/push/token.
-router.get('/',             internalAuth, getNotifications);
-router.get('/unread-count', internalAuth, getUnreadCount);
-router.patch('/:id/read',   internalAuth, markRead);
-router.patch('/read-all',   internalAuth, markAllRead);
+// Đọc lịch sử + trạng thái đã đọc cho NGƯỜI DÙNG (web quản lý). Auth: Bearer JWT của server Phong.
+// Chỉ trả thông báo của cây người dùng có quyền; ?deviceId=... để lọc 1 cây (ngoài quyền → 403).
+router.use(userAuth);
+router.get('/',             getNotifications);
+router.get('/unread-count', getUnreadCount);
+router.patch('/read-all',   markAllRead);
+router.patch('/:id/read',   markRead);
 
 export default router;

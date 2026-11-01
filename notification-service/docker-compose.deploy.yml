@@ -15,7 +15,7 @@ services:
     pull_policy: always
     ports:
       - "3001:3001" # host 3001 -> container 3001
-    # Nạp secret từ .env cùng thư mục: INTERNAL_API_KEY, MQTT_*, (Firebase nếu dùng cách B)
+    # Nạp secret từ .env cùng thư mục: INTERNAL_API_KEY, (Firebase nếu dùng cách B)
     env_file:
       - .env
     environment:
@@ -25,6 +25,10 @@ services:
       MONGODB_URI: mongodb://mongodb:27017/notifications_db
       # --- Firebase cách A (khuyến nghị): mount file key, KHÔNG set FIREBASE_PROJECT_ID/CLIENT_EMAIL/PRIVATE_KEY trong .env ---
       FIREBASE_SERVICE_ACCOUNT_PATH: /app/serviceAccountKey.json
+      # Server Phong (tài khoản + quyền xem cây) chạy trên máy host ở port 8080 — đổi nếu Phong ở chỗ khác
+      PLANT_API_URL: http://host.docker.internal:8080
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       # File serviceAccountKey.json PHẢI tồn tại cạnh compose TRƯỚC khi `up`
       # (nếu thiếu, Docker sẽ tạo nhầm 1 thư mục). Dùng cách B thì xóa 2 dòng volumes + FIREBASE_SERVICE_ACCOUNT_PATH ở trên.

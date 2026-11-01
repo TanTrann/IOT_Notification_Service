@@ -1,6 +1,6 @@
-// Bảo vệ các endpoint /internal/* — dành cho service nội bộ (MCP server của Phong,
-// client đăng ký token) chứ KHÔNG phải người dùng cuối, nên dùng API key thay vì JWT.
-// Key nhận qua header `x-api-key`.
+// Bảo vệ /internal/notify — dành cho server .NET của Phong (server-to-server) chứ KHÔNG phải
+// người dùng cuối, nên dùng API key thay vì JWT. Key nhận qua header `x-api-key`.
+// Người dùng (web quản lý) xác thực bằng JWT của Phong — xem userAuth.js.
 export function internalAuth(req, res, next) {
   const expected = process.env.INTERNAL_API_KEY;
   if (!expected) {

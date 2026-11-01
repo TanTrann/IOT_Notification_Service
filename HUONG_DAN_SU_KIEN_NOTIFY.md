@@ -1,6 +1,10 @@
 # Hướng Dẫn Tích Hợp & Quy Chuẩn Sự Kiện Notification (SmartFarm)
 
-Tài liệu quy định chi tiết định dạng dữ liệu thô gửi từ **Server Điều Khiển (.NET / Phong)** sang **IOT Notification Service** (`POST /internal/notify`) và cách service tự động map ra thông báo đẩy (Push Notification) hiển thị trên màn hình Web Kiosk / App.
+Tài liệu quy định chi tiết định dạng dữ liệu thô gửi từ **Server Điều Khiển (.NET / Phong)** sang **IOT Notification Service** (`POST /internal/notify`) và cách service tự động map ra thông báo đẩy (Push Notification) hiển thị trên web quản lý của người dùng.
+
+Mỗi sự kiện được lưu vào lịch sử rồi **push tới mọi người dùng đang có quyền xem `deviceId` đó** (chủ cây hoặc được share
+trên server Phong — quyền được hỏi lại Phong ngay lúc gửi). Phía Phong **chỉ cần gửi đúng `deviceId`**, không phải biết ai sẽ nhận.
+`x-api-key` (`INTERNAL_API_KEY`) chỉ dùng cho endpoint này; web/app người dùng không dùng key này.
 
 ---
 
@@ -29,7 +33,7 @@ Tài liệu quy định chi tiết định dạng dữ liệu thô gửi từ **
 ### Chi Tiết Trường Dữ Liệu:
 | Trường | Kiểu Dữ Liệu | Bắt Buộc | Mô Tả |
 | :--- | :--- | :--- | :--- |
-| `deviceId` | `String` | **Có** | Mã thiết bị / cây trồng mà màn hình kiosk đứng cạnh (dùng targeting push). |
+| `deviceId` | `String` | **Có** | Mã thiết bị / cây trồng phát sinh sự kiện (trùng `deviceId` trong `GET /api/devices` của Phong). Push gửi tới mọi người dùng có quyền xem cây này. |
 | `event` | `String` | Không | Mã sự kiện chuẩn (ví dụ `"pump.on"`, `"water.empty"`...). |
 | `data` | `Object` | Không | Chứa các thông số đo đạc thô dạng `{ key: value }`. |
 | `severity` | `String` | Không | Mức độ cảnh báo (`"info"`, `"warning"`, `"critical"`). |
@@ -37,6 +41,12 @@ Tài liệu quy định chi tiết định dạng dữ liệu thô gửi từ **
 | `body` | `String` | Không | Nội dung tùy chỉnh (nếu muốn ghi đè template mặc định). |
 | `type` | `String` | Không | Danh mục (`"water"`, `"temperature"`, `"light"`, `"system"`, `"disease"`, `"nutrition"`). |
 | `eventId` / `id`| `String` | Không | Mã định danh duy nhất của sự kiện (dùng chống trùng lặp tin nhắn khi retry). |
+
+### Phản Hồi
+
+`202 { "success": true, "deviceId", "event", "title", "body", "recipients" }` — `recipients` là số FCM token đã gửi push
+(`0` nếu chưa có người dùng nào có quyền xem cây này đang đăng ký nhận push, hoặc Notify tạm không hỏi được quyền từ server Phong;
+lịch sử vẫn được lưu trong mọi trường hợp).
 
 ---
 
@@ -79,7 +89,9 @@ Khi nhận `event` và `data`, lớp `templateEngine.js` sẽ tự động ghép
 
 ## 4. Cấu Trúc FCM Push Payload Xuất Ra Client
 
-Gói tin cuối cùng được gửi tới Firebase Cloud Messaging (FCM):
+Gói tin cuối cùng được gửi tới Firebase Cloud Messaging (FCM) cho từng token của người dùng có quyền
+(kèm cấu hình `webpush` cho trình duyệt). `notificationId` là `_id` bản ghi lịch sử — client dùng để đánh dấu đã đọc
+qua `PATCH /api/v1/notifications/:id/read`:
 
 ```json
 {
@@ -88,6 +100,7 @@ Gói tin cuối cùng được gửi tới Firebase Cloud Messaging (FCM):
     "body": "Đất 25% dưới ngưỡng 35%, bơm đang chạy"
   },
   "data": {
+    "notificationId": "6724a1f0c3b2e95a1d0f1234",
     "deviceId": "ESP32S3_Zone1",
     "event": "pump.on",
     "type": "water",

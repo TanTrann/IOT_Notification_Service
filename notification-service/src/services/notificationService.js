@@ -1,5 +1,10 @@
+import mongoose from 'mongoose';
+
+import FCMToken from '../models/FCMToken.js';
 import Notification from '../models/Notification.js';
 import fcmService from './fcmService.js';
+import { resolveAccess } from './plantAccess.js';
+import { selectRecipients } from './recipientSelector.js';
 import { formatEventPayload } from '../utils/templateEngine.js';
 
 // Hỗ trợ bóc tách key linh hoạt từ payload
@@ -19,6 +24,12 @@ function normType(raw) {
   return TYPE_ENUM.includes(t) ? t : undefined;
 }
 
+// Bản ghi trả cho client: isRead tính theo người xem, KHÔNG lộ readBy (danh sách người khác).
+function toUserView(doc, userId) {
+  const { readBy = [], ...rest } = doc;
+  return { ...rest, isRead: readBy.includes(userId) };
+}
+
 class NotificationService {
   // Nhận 1 thông báo từ server .NET (Phong) qua POST /internal/notify.
   // Đã hỗ trợ cả dạng event + data cấu trúc lẫn dạng title + body truyền thống.
@@ -32,16 +43,26 @@ class NotificationService {
     const severity = normSeverity(formattedSeverity);
     const type = normType(formattedType);
 
-    // Ghi lịch sử vào MongoDB — BEST-EFFORT: lỗi ghi DB KHÔNG chặn việc đẩy push.
-    this._saveHistory({ payload, deviceId, event, title, body, type, severity })
-      .catch(err => console.error('Lưu lịch sử lỗi:', err.message));
+    // Ghi lịch sử vào MongoDB trước để lấy _id gửi kèm push (client dùng để đánh dấu đã đọc).
+    // BEST-EFFORT: lỗi ghi DB KHÔNG chặn việc đẩy push, chỉ thiếu notificationId.
+    let notificationId = '';
+    try {
+      notificationId = await this._saveHistory({ payload, deviceId, event, title, body, type, severity });
+    } catch (err) {
+      console.error('Lưu lịch sử lỗi:', err.message);
+    }
 
-    // Push tới đúng các màn hình đã đăng ký deviceId này (targeting theo thiết bị).
-    const results = await fcmService.sendToDeviceId(deviceId, {
+    // Push tới mọi người dùng CÒN quyền xem deviceId — hỏi lại server Phong ngay lúc gửi.
+    // Chỉ xét token có phiên đăng nhập chưa hết hạn (expiresAt = exp của JWT).
+    const tokens = await FCMToken.find({ expiresAt: { $gt: new Date() } }).select('+jwt').lean();
+    const recipients = await selectRecipients(tokens, deviceId, resolveAccess);
+
+    const results = await fcmService.sendToTokens(recipients, {
       title,
       body,
-      // FCM ép mọi field data về string; gửi kèm deviceId, event, type, severity & raw payload
+      // FCM ép mọi field data về string; gửi kèm notificationId, deviceId, event, type, severity & raw payload
       data: {
+        notificationId,
         deviceId,
         event: event || '',
         type: type || '',
@@ -50,11 +71,10 @@ class NotificationService {
       },
     });
 
-    const recipients = Array.isArray(results) ? results.length : 0;
-    return { deviceId, event, title, body, recipients };
+    return { deviceId, event, title, body, recipients: results.length };
   }
 
-  // Lưu 1 bản ghi lịch sử để REST /api/v1/notifications đọc lại được.
+  // Lưu 1 bản ghi lịch sử để REST /api/v1/notifications đọc lại được. Trả về _id (string).
   async _saveHistory({ payload, deviceId, event, title, body, type, severity }) {
     const doc = {
       deviceId: deviceId || 'broadcast',
@@ -71,48 +91,54 @@ class NotificationService {
     const eventId = pick(payload, ['eventId', 'event_id', 'id']);
     if (eventId != null && eventId !== '') {
       doc.eventId = String(eventId);
-      await Notification.updateOne(
+      const saved = await Notification.findOneAndUpdate(
         { eventId: String(eventId) },
         { $setOnInsert: doc },
-        { upsert: true }
+        { upsert: true, new: true, lean: true }
       );
-    } else {
-      await Notification.create(doc);
+      return String(saved._id);
     }
+    const created = await Notification.create(doc);
+    return String(created._id);
   }
 
-  async getByUser(deviceId, page = 1, limit = 20) {
-    const filter = (deviceId && deviceId !== 'all') ? { deviceId } : {};
-    const [items, unreadCount] = await Promise.all([
+  // ── Đọc theo người dùng: chỉ trong deviceIds người đó có quyền (lấy từ Phong), "đã đọc" theo readBy ──
+
+  async list(userId, deviceIds, { unread = false, page = 1, limit = 20 } = {}) {
+    const scope = { deviceId: { $in: deviceIds } };
+    const filter = unread ? { ...scope, readBy: { $ne: userId } } : scope;
+    const [docs, unreadCount] = await Promise.all([
       Notification.find(filter)
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
-        .limit(limit),
-      Notification.countDocuments({ ...filter, isRead: false }),
+        .limit(limit + 1)
+        .lean(),
+      this.unreadCount(userId, deviceIds),
     ]);
-    return { items, unreadCount };
+    const hasMore = docs.length > limit;
+    const items = docs.slice(0, limit).map(d => toUserView(d, userId));
+    return { items, unreadCount, page, limit, hasMore };
   }
 
-  async markRead(id, deviceId) {
-    const filter = { _id: id };
-    if (deviceId && deviceId !== 'all') filter.deviceId = deviceId;
-    return Notification.findOneAndUpdate(
-      filter,
-      { isRead: true },
-      { new: true }
+  async unreadCount(userId, deviceIds) {
+    return Notification.countDocuments({ deviceId: { $in: deviceIds }, readBy: { $ne: userId } });
+  }
+
+  async markRead(id, userId, deviceIds) {
+    if (!mongoose.isValidObjectId(id)) return null;
+    const doc = await Notification.findOneAndUpdate(
+      { _id: id, deviceId: { $in: deviceIds } },
+      { $addToSet: { readBy: userId } },
+      { new: true, lean: true }
     );
+    return doc ? toUserView(doc, userId) : null;
   }
 
-  async markAllRead(deviceId) {
-    const filter = { isRead: false };
-    if (deviceId && deviceId !== 'all') filter.deviceId = deviceId;
-    return Notification.updateMany(filter, { isRead: true });
-  }
-
-  async getUnreadCount(deviceId) {
-    const filter = { isRead: false };
-    if (deviceId && deviceId !== 'all') filter.deviceId = deviceId;
-    return Notification.countDocuments(filter);
+  async markAllRead(userId, deviceIds) {
+    await Notification.updateMany(
+      { deviceId: { $in: deviceIds }, readBy: { $ne: userId } },
+      { $addToSet: { readBy: userId } }
+    );
   }
 }
 

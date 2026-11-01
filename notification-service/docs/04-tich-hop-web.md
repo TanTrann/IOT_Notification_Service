@@ -1,177 +1,197 @@
-# Tích hợp thông báo vào website — dành cho dev web
+# Tích hợp thông báo vào web quản lý — dành cho team Frontend
 
-Tài liệu bàn giao cho người phụ trách website: cách hiển thị danh sách thông báo và nhận
-push notification từ **IOT Notification Service** trên trang của bạn.
+Tài liệu bàn giao cho người làm **web quản lý**: cách cho người dùng đăng nhập, hiển thị danh sách thông báo
+và nhận push realtime từ **IOT Notification Service** (gọi tắt là Notify).
 
-Bạn **không cần đụng tới nguồn thông báo** — Phong xử lý và gửi thông báo vào service
-(`POST /internal/notify`), service lo phần lưu trữ và đẩy push. Website/màn hình kiosk chỉ làm 3 việc:
+Bạn **không cần đụng tới nguồn thông báo**: server .NET của Phong phát hiện sự kiện của cây và gửi sang Notify,
+Notify lo lưu trữ và đẩy push. Web của bạn làm 3 việc:
 
-1. **Cấu hình** Server URL + `deviceId` (cây/thiết bị màn hình này đứng cạnh) + API key.
-2. **Gọi REST API** để hiển thị danh sách thông báo, đếm chưa đọc, đánh dấu đã đọc.
-3. **Đăng ký FCM token** (kèm `deviceId`) để trình duyệt nhận push realtime của đúng cây đó.
+1. **Cho người dùng đăng nhập** bằng tài khoản bên server Phong → nhận **JWT** (đây chính là "token truy cập").
+2. **Gọi REST API của Notify** kèm JWT để hiện danh sách thông báo, đếm chưa đọc, đánh dấu đã đọc.
+3. **Đăng ký FCM token** để trình duyệt nhận push realtime.
 
-> Tham khảo triển khai mẫu hoàn chỉnh (1 file HTML): [`../../notification-web/index.html`](../../notification-web/index.html)
+Mỗi người dùng **chỉ thấy thông báo của các cây mình sở hữu hoặc được chia sẻ** (quyền do server Phong quản lý).
+Trạng thái "đã đọc" tính **riêng cho từng người**.
 
-> ⚠️ **Mô hình hiện tại (Phong `POST /internal/notify`, targeting theo deviceId — KHÔNG còn user/đăng nhập/JWT):**
-> - **`deviceId` là danh tính của chính màn hình kiosk** (cấu hình trên máy), không gắn với user.
-> - **Push (FCM) theo deviceId**: mỗi tin Phong gửi kèm một `deviceId`, service chỉ gửi tới các token đã
->   đăng ký **đúng `deviceId`** đó → mỗi màn hình chỉ nhận tin của cây mình.
-> - **REST danh sách lọc theo `deviceId`**: mỗi tin nhận qua `/internal/notify` được **ghi vào MongoDB**, nên
->   `GET /api/v1/notifications?deviceId=...` trả về lịch sử bền vững của đúng cây đó. Push realtime và
->   lịch sử REST dùng chung `deviceId` → **khớp nhau**.
-> - **Xác thực**: chỉ một **API key** chung gửi qua header `x-api-key` cho **mọi** request
->   (cả `/internal/*` lẫn `/api/v1/notifications`). Không còn `Authorization: Bearer`/JWT/đăng nhập.
-> - Màn hình kiosk (`notification-web`) hiện danh sách realtime **ngay trong trang từ chính message
->   FCM** (`onMessage`), đồng thời nạp thêm lịch sử cũ từ REST khi mở trang.
+> Triển khai mẫu hoàn chỉnh (1 file HTML, làm đúng như hướng dẫn này):
+> [`../../notification-web/index.html`](../../notification-web/index.html)
 
 ---
 
-## 1. Những thứ được bàn giao
+## 1. Gói bàn giao
 
 | Thứ | Giá trị / nơi lấy |
 |---|---|
-| Base URL | `http://localhost:3001` (dev) — production sẽ báo sau |
-| API key (`x-api-key`) | Gửi qua kênh riêng (KHÔNG nằm trong repo) — chính là `INTERNAL_API_KEY` của service, dùng cho MỌI request |
-| `deviceId` | Danh tính của cây/thiết bị mà màn hình đứng cạnh (vd `ESP32S3_Zone1`) — cấu hình trên chính màn hình |
-| Firebase web config | apiKey/projectId/senderId/appId — xem trong `notification-web/index.html` (project `smartfarmai-f1426`) |
-| VAPID key | Xem `notification-web/index.html` (ô VAPID) |
-| CORS | Báo origin trang của bạn (vd `https://smartfarm.example.com`) để thêm vào `ALLOWED_ORIGINS` của service |
+| URL Notify | `http://localhost:3001` (dev) — production báo sau |
+| URL server Phong | `http://localhost:8000` (dev, `dotnet run`) / `:8080` (Docker) — production báo sau |
+| Tài khoản test | Một email/mật khẩu bên server Phong đã được chia sẻ vài cây — gửi qua kênh riêng |
+| Firebase web config + VAPID key | Xem đầu `<script>` trong `notification-web/index.html` (project `smartfarmai-f1426`) |
+| Service worker mẫu | [`../../notification-web/firebase-messaging-sw.js`](../../notification-web/firebase-messaging-sw.js) |
+
+Bạn **không** nhận API key nào của Notify. `INTERNAL_API_KEY` chỉ dành cho server Phong gọi `/internal/notify`.
 
 ---
 
-## 2. Xác thực — API key + deviceId (không còn đăng nhập/JWT)
-
-Không còn user/đăng nhập. **Mọi** request tới service gửi kèm header `x-api-key: <API key>`
-(chính là `INTERNAL_API_KEY` của service). API key luôn ở phía server/kiosk cấu hình, không public.
-
-Thay cho "user", mỗi màn hình có một **`deviceId`** — danh tính của cây/thiết bị nó đứng cạnh.
-Các API lịch sử nhận `deviceId` qua **query string** `?deviceId=...` (hoặc trong body), và chỉ
-trả/sửa thông báo của đúng `deviceId` đó.
+## 2. Đăng nhập — lấy JWT từ server Phong
 
 ```js
-// Gợi ý: lưu cấu hình trên máy kiosk (vd localStorage)
-const cfg = { server: 'http://localhost:3001', deviceId: 'ESP32S3_Zone1', apiKey: '...' };
+const PLANT_API_URL = 'http://localhost:8000';
+const NOTIFY_URL    = 'http://localhost:3001';
 
-// Helper gọi REST: tự gắn x-api-key + ?deviceId
-function api(path, opts = {}) {
-  const sep = path.includes('?') ? '&' : '?';
-  const url = `${cfg.server}/api/v1/notifications${path}${sep}deviceId=${encodeURIComponent(cfg.deviceId)}`;
-  return fetch(url, {
+const r = await fetch(`${PLANT_API_URL}/api/auth/login`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ email, password }),
+});
+// 200 → { token, email, displayName, role }   ·   401 → sai email/mật khẩu
+const { token } = await r.json();
+```
+
+- JWT có hạn **24 giờ**. Lưu ở client (vd `localStorage`) để mở lại trang không phải đăng nhập lại.
+- Mọi request tới Notify gửi header `Authorization: Bearer <token>`.
+- Notify trả **401** bất kỳ lúc nào → token hết hạn/không hợp lệ → xoá token, đưa người dùng về màn đăng nhập.
+
+```js
+async function notify(path, opts = {}) {
+  const r = await fetch(`${NOTIFY_URL}/api/v1${path}`, {
     ...opts,
-    headers: { 'Content-Type': 'application/json', 'x-api-key': cfg.apiKey, ...(opts.headers || {}) },
-  }).then(r => r.json());
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...(opts.headers || {}) },
+  });
+  if (r.status === 401) { /* xoá token, về màn đăng nhập */ }
+  return r.json();
 }
 ```
 
-> Sai/thiếu API key → API trả **401** `Invalid API key`. Chưa cấu hình `INTERNAL_API_KEY` phía
-> server → **503**. Thiếu `deviceId` → **400** `Missing deviceId`.
-
 ---
 
-## 3. REST API
+## 3. REST API của Notify
 
-Base path: `/api/v1/notifications` · Header bắt buộc: `x-api-key` · Tham số bắt buộc: `deviceId` (qua query `?deviceId=...` hoặc body).
-
-> 💡 **Xem toàn bộ hệ thống hoặc từng cây:**
-> - Truyền `deviceId=<mã_cây>` (vd: `?deviceId=ESP32S3_Zone1`) để chỉ lấy/sửa thông báo của đúng cây đó.
-> - Truyền `deviceId=all` (vd: `?deviceId=all`) để lấy/sửa thông báo của **tất cả** các cây (rất hữu ích cho **Notification Center / Bell trên Web Dashboard quản lý chung của Thịnh**).
+Header bắt buộc: `Authorization: Bearer <JWT>`.
 
 | Method & path | Chức năng | Trả về |
 |---|---|---|
-| `GET /?deviceId=...&page=1&limit=20` | Danh sách thông báo (mới nhất trước, hỗ trợ phân trang) | `{ success, items: [...], unreadCount }` |
-| `GET /unread-count?deviceId=...` | Đếm số tin chưa đọc (để hiển thị badge đỏ trên icon chuông) | `{ success, unreadCount }` |
-| `PATCH /:id/read?deviceId=...` | Đánh dấu 1 thông báo đã đọc | `{ success, data }` |
-| `PATCH /read-all?deviceId=...` | Đánh dấu tất cả thông báo đã đọc | `{ success, message }` |
+| `GET /api/v1/me` | Người đang đăng nhập + danh sách cây được xem (để vẽ bộ lọc theo **tên** cây) | `{ success, userId, email, devices: [{ deviceId, name }] }` |
+| `GET /api/v1/notifications` | Danh sách, mới nhất trước | `{ success, items, unreadCount, page, limit, hasMore }` |
+| `GET /api/v1/notifications/unread-count` | Đếm chưa đọc (badge chuông) | `{ success, unreadCount }` |
+| `PATCH /api/v1/notifications/:id/read` | Đánh dấu 1 tin đã đọc (cho người này) | `{ success, data }` |
+| `PATCH /api/v1/notifications/read-all` | Đánh dấu tất cả đã đọc (cho người này) | `{ success, message }` |
+| `POST /api/v1/push/token` | Đăng ký FCM token — body `{ token, device: 'web' }` | `{ success }` |
+| `DELETE /api/v1/push/token` | Hủy FCM token — body `{ token }` | `{ success }` |
 
-> Đăng ký/hủy FCM token dùng `/internal/push/token` (xem mục 4).
+Tham số query của các route `/notifications` (đều tuỳ chọn):
 
-Cấu trúc một item thông báo trả về từ MongoDB:
+| Tham số | Ý nghĩa |
+|---|---|
+| `deviceId` | Chỉ lấy/sửa thông báo của 1 cây. Không truyền = mọi cây người dùng có quyền |
+| `unread=true` | Chỉ lấy tin chưa đọc (chỉ cho `GET /notifications`) |
+| `page`, `limit` | Phân trang, mặc định `1`, `20`; `limit` tối đa `100`. Dùng `hasMore` để hiện nút "Xem thêm" |
+
+`unreadCount` luôn đếm theo phạm vi `deviceId` (nếu có), không phụ thuộc `unread`/`page`.
+
+Một item thông báo:
 
 ```json
 {
-  "_id": "66b1a2b3c4d5e6f7a8b9c0d1",
-  "eventId": "evt_20260811_001",
+  "_id": "6730f1a2b3c4d5e6f7a8b9c0",
+  "eventId": "ESP32S3_Zone1:water.empty:1793520000",
   "deviceId": "ESP32S3_Zone1",
-  "event": "pump.on",
-  "title": "Đang tưới cây",
-  "body": "Đất 25% dưới ngưỡng 35%, bơm đang chạy",
+  "event": "water.empty",
+  "title": "Hết nước tưới",
+  "body": "Bình chứa cạn, không thể tưới, cần châm nước",
   "type": "water",          // water | light | temperature | nutrition | disease | system
-  "severity": "info",       // info | warning | critical
-  "isRead": false,
-  "data": { "soilPercent": 25, "soilOnPct": 35 },
-  "createdAt": "2026-08-11T16:20:50.531Z"
+  "severity": "critical",   // info | warning | critical
+  "isRead": false,          // tính theo NGƯỜI ĐANG ĐĂNG NHẬP
+  "data": { "soilPercent": 18, "waterOk": false },
+  "createdAt": "2026-11-01T09:15:00.000Z"
 }
 ```
 
-Gợi ý UI cho Web:
-- Icon theo `type`: 💧 (`water`), 💡 (`light`), 🌡️ (`temperature`), 🌱 (`nutrition`), 🦠 (`disease`), ⚙️ (`system`).
-- Màu sắc theo `severity`: Xanh/Xám (`info`), Vàng cam (`warning`), Đỏ (`critical`).
+Gợi ý UI:
+- Tên cây: map `deviceId` → `name` từ `GET /api/v1/me` (đừng hiện mã thô).
+- Icon theo `type`: 💧 `water`, 💡 `light`, 🌡️ `temperature`, 🌱 `nutrition`, 🦠 `disease`, ⚙️ `system`.
+- Màu theo `severity`: xanh `info`, cam `warning`, đỏ `critical`.
+
+### Mã lỗi
+
+| Mã | Khi nào | Web nên làm |
+|---|---|---|
+| 401 | Thiếu / sai / hết hạn JWT | Xoá token, về màn đăng nhập |
+| 403 | `deviceId` không thuộc quyền người dùng | Bỏ bộ lọc đó, tải lại `/me` |
+| 404 | `:id` không tồn tại hoặc thuộc cây người dùng không có quyền | Tải lại danh sách |
+| 503 | Notify không liên lạc được server Phong để kiểm quyền | Báo "hệ thống tạm thời gián đoạn", thử lại sau |
+
+### Thử nhanh bằng curl
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:8000/api/auth/login -H "Content-Type: application/json" \
+  -d '{"email":"<email>","password":"<mật khẩu>"}' | node -pe "JSON.parse(require('fs').readFileSync(0)).token")
+
+curl -H "Authorization: Bearer $TOKEN" http://localhost:3001/api/v1/me
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:3001/api/v1/notifications?limit=5"
+curl -H "Authorization: Bearer $TOKEN" -X PATCH http://localhost:3001/api/v1/notifications/read-all
+```
 
 ---
 
 ## 4. Nhận push realtime (FCM)
 
-### 4.1. Đăng ký (chạy 1 lần sau khi cấu hình deviceId + API key)
+### 4.1. Đăng ký — sau MỖI lần đăng nhập
 
 ```js
 // Firebase SDK v10 (compat hoặc modular đều được)
 firebase.initializeApp(FIREBASE_CONFIG);
 const messaging = firebase.messaging();
 
-const permission = await Notification.requestPermission();          // xin quyền browser
+const permission = await Notification.requestPermission();
 const swReg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
 const fcmToken = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
 
-// Đăng ký token KÈM deviceId qua endpoint nội bộ → service chỉ đẩy tin của cây này về máy này.
-await fetch(`${cfg.server}/internal/push/token`, {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json', 'x-api-key': cfg.apiKey },
-  body: JSON.stringify({ token: fcmToken, deviceId: cfg.deviceId, device: 'web' }),
-});
+await notify('/push/token', { method: 'POST', body: JSON.stringify({ token: fcmToken, device: 'web' }) });
 ```
 
-Endpoint đăng ký/hủy token:
+Vì sao phải gọi lại sau mỗi lần đăng nhập: Notify lưu token **kèm JWT hiện tại**. Mỗi khi có sự kiện, Notify
+dùng JWT đó hỏi lại server Phong xem người dùng **còn quyền** với cây không rồi mới gửi. JWT hết hạn → ngừng gửi
+cho máy đó cho tới khi đăng nhập lại và đăng ký lại.
 
-| Method & path | Body | Auth |
-|---|---|---|
-| `POST /internal/push/token` | `{ token, deviceId, device }` (`deviceId` **bắt buộc**; `device` mặc định `'web'`) | `x-api-key` |
-| `DELETE /internal/push/token` | `{ token }` | `x-api-key` |
+### 4.2. Đăng xuất
 
-### 4.2. Tab đang mở (foreground)
+Gọi `DELETE /api/v1/push/token` với `{ token: fcmToken }` **trước** khi xoá JWT, rồi `messaging.deleteToken()`,
+để máy này ngừng nhận push của tài khoản ngay (quan trọng với máy dùng chung). Nếu lúc đăng xuất chưa có
+`fcmToken` trong bộ nhớ (vd trang chưa bật push lần này) mà quyền thông báo đã `granted`, lấy lại bằng
+`messaging.getToken(...)` trước khi DELETE. Đồng thời xoá mọi trạng thái theo người dùng (bộ lọc, danh sách) ở client.
+
+### 4.3. Tab đang mở (foreground)
 
 ```js
 messaging.onMessage(payload => {
-  // payload.notification = { title, body }; payload.data = { type, severity, eventId, ... }
-  // → hiện toast trong trang + refresh danh sách
+  // payload.notification = { title, body }
+  // payload.data = { notificationId, deviceId, event, type, severity, raw }
+  // → hiện toast + tải lại danh sách / badge
 });
 ```
 
-### 4.3. Tab đóng / background — service worker
+`data.notificationId` là `_id` của bản ghi — dùng được cho `PATCH /notifications/:id/read`.
 
-File `firebase-messaging-sw.js` đặt ở **root** của site. ⚠️ **Bẫy quan trọng**: message
-đã có field `notification` thì Chrome/FCM SDK **tự hiển thị** — nếu trong
-`onBackgroundMessage` bạn gọi `showNotification` nữa sẽ bị **nhân đôi thông báo**:
+### 4.4. Tab đóng / background — service worker
+
+File `firebase-messaging-sw.js` đặt ở **root** của site. ⚠️ Message đã có field `notification` thì trình duyệt
+**tự hiển thị** — nếu trong `onBackgroundMessage` gọi `showNotification` nữa sẽ bị **nhân đôi**:
 
 ```js
 messaging.onBackgroundMessage(payload => {
-  if (payload.notification) return;   // FCM tự hiển thị rồi — đừng show thêm!
-  // chỉ tự show cho data-only message
+  if (payload.notification) return;   // đã tự hiển thị — đừng show thêm!
 });
 ```
 
-(Xem file mẫu đầy đủ: [`../../notification-web/firebase-messaging-sw.js`](../../notification-web/firebase-messaging-sw.js))
+(Xem file mẫu: [`../../notification-web/firebase-messaging-sw.js`](../../notification-web/firebase-messaging-sw.js))
 
 ---
 
-## 5. Các lưu ý còn lại
+## 5. Lưu ý
 
-- **CORS**: origin của bạn phải nằm trong `ALLOWED_ORIGINS` của service — báo cho Tân thêm.
-- **Push không tới?** Kiểm tra: đã `POST /internal/push/token` thành công chưa (đúng `x-api-key`),
-  `deviceId` đăng ký có **khớp** `deviceId` mà Phong gửi trong `/internal/notify` không, quyền
-  notification của browser, và service worker đăng ký đúng scope root.
-- **Nhiều màn hình cùng một cây**: cứ `POST /internal/push/token` với **cùng `deviceId`** cho từng
-  máy — service gửi push song song tới mọi token của `deviceId` đó, token chết tự bị xóa.
-- **Đổi cây**: đăng ký lại token với `deviceId` mới; nên xóa danh sách cũ ở client để không lẫn tin
-  của cây khác.
-- **Realtime khi tab mở**: ngoài push, nên refresh danh sách (`GET /?deviceId=...`) khi tab focus lại
-  (background push không chạy được JS trong tab).
+- **Quyền thay đổi** (chủ cây chia sẻ / thu hồi bên server Phong): danh sách và push cập nhật trong vòng ~1 phút.
+- **Push không tới?** Kiểm tra: `POST /api/v1/push/token` đã 200 chưa, có gọi lại sau lần đăng nhập gần nhất không,
+  quyền notification của trình duyệt, service worker đăng ký ở scope root, và tài khoản có quyền với cây phát sự kiện.
+- **Nhiều trình duyệt / thiết bị của cùng người dùng**: mỗi nơi tự đăng ký token của mình, đều nhận push.
+- **Realtime khi tab mở lại**: ngoài push, nên tải lại danh sách khi tab được focus.
+- **CORS**: Notify hiện cho phép mọi origin; nếu deploy production có giới hạn origin, báo Tân thêm domain web của bạn.

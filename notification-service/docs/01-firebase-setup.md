@@ -2,7 +2,10 @@
 
 Tài liệu này hướng dẫn thiết lập **Firebase Cloud Messaging (FCM)** cho cả hai phía:
 - **Phía Server (Notification Service)** — dùng Firebase Admin SDK để *gửi* push.
-- **Phía Client (notification-web)** — dùng Firebase JS SDK để *nhận* push và lấy registration token.
+- **Phía Client (web quản lý của người dùng; `notification-web` là trang test giả lập web đó)** — dùng Firebase JS SDK để *nhận* push và lấy registration token.
+
+Toàn hệ thống dùng **một Firebase project duy nhất: `smartfarmai-f1426`** — cả trang test lẫn web quản lý của team Frontend
+dùng chung Firebase web config + VAPID key do Notify bàn giao.
 
 ---
 
@@ -19,18 +22,21 @@ Tài liệu này hướng dẫn thiết lập **Firebase Cloud Messaging (FCM)**
    │  Client (Web SDK)     │ ◄── đăng ký ────── │  Trình duyệt / App    │
    │  + VAPID key          │                    │  (Service Worker)     │
    └──────────┬───────────┘                    └──────────────────────┘
-              │ POST /internal/push/token  { token, deviceId, device }
-              │ (x-api-key — lưu token + deviceId vào MongoDB)
+              │ POST /api/v1/push/token  { token, device }
+              │ (Authorization: Bearer <JWT đăng nhập bên Phong>
+              │  — lưu token + userId + JWT + hạn JWT vào MongoDB)
               ▼
         Notification Service
 ```
 
 - **Server** cần **Service Account** (private key) để xác thực với Firebase và gửi message.
-- **Client** cần **Web config + VAPID key** để đăng ký nhận push, rồi gửi token **kèm `deviceId`**
-  về server lưu vào DB (qua `POST /internal/push/token`, header `x-api-key`).
-- Theo mô hình hiện tại, server gửi tới **đúng** các token đã đăng ký **cùng `deviceId`**
-  (`fcmService.sendToDeviceId`) mỗi khi Phong `POST /internal/notify` (body kèm `deviceId`) —
-  targeting theo thiết bị, mỗi màn hình chỉ nhận tin của cây mình.
+- **Client** cần **Web config + VAPID key** để đăng ký nhận push, rồi gửi token về server qua
+  `POST /api/v1/push/token` với header `Authorization: Bearer <JWT>` (JWT lấy từ đăng nhập bên server Phong).
+  Token được gắn với **người dùng** (`userId`), không gắn với cây. Client gọi lại sau **mỗi lần đăng nhập**
+  và gọi `DELETE /api/v1/push/token` khi **đăng xuất**.
+- Mỗi khi Phong `POST /internal/notify` (body kèm `deviceId`), server chọn các token còn phiên đăng nhập hợp lệ,
+  **hỏi lại server Phong** xem chủ token hiện còn quyền xem `deviceId` đó không, rồi chỉ gửi cho những người có quyền
+  (chủ cây hoặc được share). Chi tiết xem [02-kien-truc.md](02-kien-truc.md) và [03-luong-hoat-dong.md](03-luong-hoat-dong.md).
 
 ---
 
@@ -39,6 +45,8 @@ Tài liệu này hướng dẫn thiết lập **Firebase Cloud Messaging (FCM)**
 1. Truy cập [Firebase Console](https://console.firebase.google.com/).
 2. **Add project** → đặt tên (ví dụ `iot-smartfarm`) → tạo project.
 3. Có thể tắt Google Analytics nếu không cần.
+
+> Dự án SmartFarm hiện đã có sẵn project **`smartfarmai-f1426`** — chỉ cần làm lại phần này khi dựng môi trường mới.
 
 ---
 
@@ -109,7 +117,8 @@ WARNING: Push notifications will not work without valid credentials!
 
 ## Phần C — Cấu hình phía Client (Web SDK)
 
-Áp dụng cho `notification-web` (màn hình kiosk) hoặc ứng dụng web thật.
+Áp dụng cho web quản lý của người dùng (web của team Frontend) và trang test `notification-web` (giả lập web đó).
+Cách tích hợp đầy đủ phía web (đăng nhập, gọi API, đăng ký token) xem [hướng dẫn tích hợp web quản lý](04-tich-hop-web.md).
 
 ### C.1. Đăng ký Web App & lấy config
 
@@ -145,7 +154,7 @@ VAPID key dùng khi gọi `getToken(messaging, { vapidKey })` để lấy regist
 
 - File `firebase-messaging-sw.js` xử lý push khi web ở chế độ nền/đóng tab.
 - Service worker **chỉ chạy** trên `http://localhost` hoặc **HTTPS** — không mở file HTML trực tiếp.
-- Chạy notification-web qua HTTP server: `cd notification-web && npm run dev` rồi mở `http://localhost:3000`.
+- Chạy notification-web qua HTTP server: `cd notification-web && npm run dev` rồi mở `http://localhost:3003`.
 
 ---
 
@@ -161,12 +170,13 @@ Tham khảo [`src/services/fcmService.js`](../src/services/fcmService.js) và [`
     body                                  // do templateEngine render hoặc custom body
   },
   data: {
-    deviceId,                             // id thiết bị đích
+    notificationId,                       // _id bản ghi lịch sử — client dùng để đánh dấu đã đọc
+                                          // (rỗng nếu lưu DB lỗi; push vẫn gửi)
+    deviceId,                             // id cây/thiết bị phát sinh sự kiện
     event: event || '',                   // mã event (vd: "pump.on", "water.empty")
     type: type || '',                     // danh mục ("water", "temperature", "system", ...)
     severity: severity || '',             // mức độ ("info", "warning", "critical")
     raw: JSON.stringify(payload),         // toàn bộ payload JSON gốc từ Phong
-    clickAction: '/dashboard'
   },
   webpush: {
     notification: { 
@@ -176,7 +186,6 @@ Tham khảo [`src/services/fcmService.js`](../src/services/fcmService.js) và [`
       badge: '/badge.png', 
       vibrate: [200, 100, 200] 
     },
-    fcmOptions: { link: '/dashboard' },
   },
 }
 ```
@@ -184,7 +193,9 @@ Tham khảo [`src/services/fcmService.js`](../src/services/fcmService.js) và [`
 Lưu ý:
 - **FCM bắt buộc mọi giá trị trong `data` là chuỗi** → code tự ép kiểu `String(v)` toàn bộ.
 - Nếu token không còn hợp lệ (`messaging/registration-token-not-registered`), service **tự xóa** token đó khỏi MongoDB.
-- `sendToDeviceId(deviceId, …)` tìm **các token có đúng `deviceId`** trong `fcmtokens` và gửi song song (targeting theo thiết bị — mỗi màn hình chỉ nhận tin của cây mình). `sendToDevice(token, …)` gửi tới 1 token cụ thể.
+- Message chỉ cấu hình `webpush` (client đều là web), không gắn link điều hướng cố định.
+- Danh sách token nhận do `recipientSelector.selectRecipients()` chọn (chỉ người **đang có quyền** xem `deviceId`, phiên còn hạn);
+  `sendToTokens(tokens, …)` gửi song song tới các token đó, `sendToDevice(token, …)` gửi tới 1 token cụ thể.
 
 ---
 
@@ -201,7 +212,7 @@ Lưu ý:
 - [ ] Đã điền **VAPID key**
 - [ ] Chạy qua `http://localhost` (không mở file trực tiếp)
 - [ ] Đã cho phép quyền thông báo trên trình duyệt
-- [ ] Token đã được lưu vào DB qua `POST /internal/push/token` (kèm `deviceId` + header `x-api-key`)
+- [ ] Token đã được lưu vào DB qua `POST /api/v1/push/token` (header `Authorization: Bearer <JWT>` của tài khoản Phong)
 
 ---
 
@@ -212,5 +223,5 @@ Lưu ý:
 | `Firebase not initialized` khi gửi | Credential server sai/thiếu. Kiểm tra log khởi động & 3 biến `FIREBASE_*`. |
 | Private key lỗi parse | `FIREBASE_PRIVATE_KEY` chưa bọc nháy kép hoặc đã xuống dòng thật thay vì `\n`. |
 | Client không lấy được token | Thiếu/sai VAPID key, hoặc chưa cấp quyền notification, hoặc không chạy trên HTTPS/localhost. |
-| Gửi `/internal/notify` nhưng không có push | `deviceId` trong body không khớp `deviceId` của token đã lưu; hoặc token đã hết hạn (đã bị tự xóa). |
+| Gửi `/internal/notify` nhưng không có push (`recipients: 0`) | Tài khoản đăng ký token không sở hữu / không được share cây `deviceId` đó; phiên đăng nhập (JWT) đã hết hạn → đăng nhập lại để đăng ký lại token; server Phong không truy cập được (`PLANT_API_URL` sai/Phong tắt) → không gửi cho ai; hoặc token đã hết hiệu lực (đã bị tự xóa). |
 | Push không hiện khi đóng tab | Service worker `firebase-messaging-sw.js` chưa được đăng ký hoặc thiếu config. |

@@ -10,12 +10,12 @@ const notificationSchema = new Schema(
     type:     { type: String, enum: ['disease', 'water', 'nutrition', 'light', 'temperature', 'system'] },
     severity: { type: String, enum: ['critical', 'warning', 'info'], default: 'info' },
     data:     { type: Schema.Types.Mixed },
-    isRead:   { type: Boolean, default: false },
+    // Danh sách userId (tài khoản bên Phong) đã đọc — "đã đọc" tính riêng từng người.
+    readBy:   { type: [String], default: [] },
   },
   { timestamps: true }
 );
 
 notificationSchema.index({ deviceId: 1, createdAt: -1 });
-notificationSchema.index({ deviceId: 1, isRead: 1 });
 
 export default mongoose.model('Notification', notificationSchema);

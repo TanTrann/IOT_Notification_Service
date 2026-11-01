@@ -1,61 +1,65 @@
-# Notification Web — Trung tâm thông báo SmartFarm
+# Notification Web — trang test (giả lập web quản lý của team Frontend)
 
-Màn hình **kiosk đặt cạnh cây**: nhận push notification khi hệ thống của Phong phát sự kiện
-cảnh báo (cây thiếu nước, nhiệt độ cao, đã tự động tưới...) cho **đúng thiết bị/cây** mà màn hình
-này đứng cạnh, xem lịch sử và đánh dấu đã đọc.
+Trang này **giả lập web quản lý** mà team Frontend sẽ làm: người dùng đăng nhập bằng tài khoản bên server Phong,
+xem thông báo của các cây mình sở hữu hoặc được chia sẻ, và nhận push realtime.
 
-Trang này chỉ **nhận và hiển thị** — không có đăng nhập/user, danh tính là `deviceId` cấu hình sẵn:
+Trang **chỉ dùng đúng những gì bàn giao cho team Frontend** (đăng nhập Phong → JWT → API `/api/v1/*` của Notify → FCM web),
+không dùng API key nội bộ. Test chạy được trên trang này thì team Frontend làm theo
+[hướng dẫn tích hợp](../notification-service/docs/04-tich-hop-web.md) cũng chạy được.
 
-- 🔔 Nhận push realtime qua FCM — tab đang mở hiện toast, tab đóng hiện notification hệ thống (service worker).
-- 📋 Danh sách thông báo từ API, icon theo loại (💧 nước / 💡 ánh sáng / 🌡️ nhiệt độ...), màu theo mức độ (info / warning / critical).
-- ✓ Click để đánh dấu đã đọc, nút "Đọc tất cả", badge đếm chưa đọc trên chuông.
-- 🔄 Làm mới khi có push và khi bấm nút ↻.
+- 🔐 Đăng nhập email/mật khẩu (tài khoản server Phong).
+- 📋 Một danh sách thông báo; nút lọc **Tất cả · từng cây · Chưa đọc**; nút **Xem thêm** (20 tin/lần).
+- 🎨 Viền màu theo mức độ (đỏ nguy cấp / cam cảnh báo / xanh thông tin), icon theo loại, tên cây, thời gian.
+- ✓ Bấm thẻ để đánh dấu đã đọc, nút **Đọc tất cả**, chuông đếm chưa đọc — "đã đọc" tính riêng từng người.
+- 🔔 Push realtime: tab mở hiện toast + tải lại danh sách; tab đóng hiện thông báo hệ thống (service worker).
 
 ## Cách chạy
+
+Cần 3 thứ đang chạy:
+
+1. **MongoDB** local (`mongodb://localhost:27017`).
+2. **Server Phong** (`plant-tree-iot/PlantTreeIoTServer`): `dotnet run` → `http://localhost:8000`.
+3. **Notify** (`notification-service`): `.env` có `PLANT_API_URL=http://localhost:8000`, rồi `npm run dev` → `http://localhost:3001`.
+
+Sau đó:
 
 ```bash
 cd notification-web
 npm run dev
-# Mở http://localhost:3000
+# Mở http://localhost:3003
 ```
 
-> Chạy port **3000** vì đã nằm sẵn trong `ALLOWED_ORIGINS` của notification-service.
-> Đổi port khác thì phải thêm origin đó vào `.env` của service.
 > Phải chạy qua HTTP server (service worker không hoạt động khi mở file trực tiếp).
 
-## Sử dụng
+Địa chỉ server nằm ở **2 hằng số đầu `<script>`** trong `index.html` — đổi môi trường thì sửa 2 dòng này:
 
-1. Đảm bảo `notification-service` đang chạy (`npm run dev` trong `notification-service/`).
-2. Bấm **⚙️ Cấu hình** (góc phải) và nhập:
-   - **Notification Service URL** — VD `http://localhost:3001`
-   - **Device ID** — cây/thiết bị màn hình này đứng cạnh, VD `ESP32S3_Zone1`
-   - **API key** — chính là `INTERNAL_API_KEY` trong `.env` của service
-   rồi bấm **Lưu cấu hình**.
-3. Bấm **🔔 Bật nhận push** → cho phép quyền thông báo.
-4. Xong — khi Phong gọi `POST /internal/notify` (kèm `deviceId` = Device ID này), hoặc bạn giả lập bằng
-   `cd notification-service && node scripts/publish-test.js water.empty ESP32S3_Zone1`, thông báo tự hiện.
+```js
+const PLANT_API_URL = 'http://localhost:8000';
+const NOTIFY_URL    = 'http://localhost:3001';
+```
 
-Cấu hình (server URL + deviceId + API key) lưu trong `localStorage`, lần sau mở trang tự kết nối lại.
+## Demo nhanh
 
-## Demo nhanh (không cần thiết bị thật)
-
-1. Mở `notification-web` (port 3000), cấu hình deviceId + API key và **🔔 Bật nhận push**.
-2. Giả lập Phong bắn sự kiện đúng device:
+1. Tạo tài khoản + cây bên server Phong bằng script (chạy lại nhiều lần không sao):
+   ```bash
+   cd notification-service
+   node scripts/setup-demo.js demo@test.local 123456 ESP32S3_Zone1 "Cây Zone 1"
+   ```
+   Nếu báo cây đang thuộc tài khoản khác, dùng `deviceId` khác (vd `CAY_DEMO_1`) cho cả bước 3.
+2. Mở `http://localhost:3003`, đăng nhập tài khoản đó, bấm 👤 → **Bật nhận push**.
+3. Giả lập Phong bắn sự kiện:
    ```bash
    cd notification-service
    node scripts/publish-test.js water.empty ESP32S3_Zone1
-   # hoặc: node scripts/publish-test.js pump.on ESP32S3_Zone1
-   # hoặc: node scripts/publish-test.js temp.high ESP32S3_Zone1
    ```
-
-→ Trang này lập tức hiện toast **"Hết nước tưới — Bình chứa cạn, không thể tưới, cần châm nước"** + badge chuông chưa đọc tăng lên.
+   → toast **"Hết nước tưới"** hiện lên, chuông tăng, tin nằm đầu danh sách.
+4. Thử chia sẻ cây cho tài khoản thứ hai (`POST /api/devices/ESP32S3_Zone1/share` `{ "email": ... }`):
+   tài khoản đó đăng nhập là thấy tin, và tin vẫn **chưa đọc** với họ.
 
 ## Lưu ý kỹ thuật
 
 - Firebase config + VAPID key hardcode trong `index.html` và `firebase-messaging-sw.js`
   (project `smartfarmai-f1426`) — đổi project thì sửa **cả hai file giống nhau**.
-- Màn hình đăng ký FCM token **kèm deviceId** qua `POST /internal/push/token`; service chỉ đẩy
-  tin của deviceId đó về đây. API đọc lịch sử (`GET /api/v1/notifications?deviceId=...`) cũng lọc theo deviceId.
-- Mọi request gửi API key qua header `x-api-key` (không còn JWT).
-- Push background chỉ hiện system notification (service worker không cập nhật được UI trong tab) —
-  danh sách sẽ đồng bộ khi quay lại tab.
+- JWT lưu ở `localStorage` (`notiweb-session`). Notify trả 401 → tự đăng xuất về màn đăng nhập.
+- Sau mỗi lần đăng nhập, nếu trình duyệt đã cho phép thông báo thì trang tự đăng ký lại FCM token
+  (để Notify lưu JWT còn hạn). Đăng xuất → hủy token trước rồi mới xoá JWT.

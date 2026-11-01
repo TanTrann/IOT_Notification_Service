@@ -7,6 +7,7 @@ import compression from 'compression';
 import morgan from 'morgan';
 import notificationRoutes from './routes/notificationRoutes.js';
 import internalRoutes from './routes/internalRoutes.js';
+import userRoutes from './routes/userRoutes.js';
 import { connectDB } from './config/database.js';
 
 const app = express();
@@ -29,8 +30,9 @@ app.use(compression());
 app.use(express.json());
 app.use(morgan(isProd ? 'combined' : 'dev'));
 
-app.use('/api/v1/notifications', notificationRoutes);   // đọc lịch sử — auth API key, lọc theo deviceId
-app.use('/internal', internalRoutes);                   // client nội bộ đăng ký/hủy FCM token — auth API key
+app.use('/api/v1/notifications', notificationRoutes);   // người dùng đọc lịch sử — auth Bearer JWT của Phong
+app.use('/api/v1', userRoutes);                         // /me + đăng ký/hủy FCM token — auth Bearer JWT của Phong
+app.use('/internal', internalRoutes);                   // server Phong POST /internal/notify — auth API key
 
 app.get('/health', (_req, res) => res.json({ status: 'ok', message: 'Notification Service is running' }));
 
